@@ -1,7 +1,7 @@
 {
-  "name": "ふたご家計簿",
-  "short_name": "家計簿",
-  "description": "音声で入力できる、双子のための家計簿アプリ",
+  "name": "かんたん家計簿",
+  "short_name": "かんたん家計簿",
+  "description": "音声で入力できる、かんたん家計簿アプリ",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
