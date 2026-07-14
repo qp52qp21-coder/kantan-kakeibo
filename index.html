@@ -357,7 +357,8 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
-db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+// オフライン対応。失敗しても致命的ではないので、ここで完結させておく
+try{ db.enablePersistence({synchronizeTabs:true}).catch(()=>{}); }catch(e){}
 
 // ログイン名(t1/t2/parent)を、Firebase認証用のメールアドレス・パスワードに変換する
 // (画面上は今まで通り「名前選択+4桁の暗証番号」のまま。裏側だけFirebase Authenticationを使う)
@@ -431,39 +432,81 @@ async function migrateToAuthIfNeeded(){
   // 以前からのデータ(暗証番号が平文でmeta/usersに入っている状態)を、
   // Firebase Authenticationのアカウントに一度だけ移行する
   if(usersMeta.authReady) return;
+  // pinが揃っていない(=移行が中途半端 or 既に消えている)場合は移行できないので何もしない
+  if(!usersMeta.t1?.pin || !usersMeta.t2?.pin || !usersMeta.parent?.pin) return;
+
   for(const uid of ['t1','t2','parent']){
     const pin=usersMeta[uid].pin;
-    if(!pin) continue;
     try{
       await auth.createUserWithEmailAndPassword(authEmail(uid), authPassword(pin));
     }catch(e){
       if(e.code!=='auth/email-already-in-use') console.warn('移行エラー',uid,e);
     }
   }
-  await auth.signOut();
-  // 移行が終わったら、平文の暗証番号はFirestoreから消す(これ以降はFirebase Authだけが本人確認を行う)
-  usersMeta = {
+  // Firestore更新には認証が必要。サインインしていなければparentでサインイン
+  if(!auth.currentUser){
+    try{
+      await auth.signInWithEmailAndPassword(authEmail('parent'), authPassword(usersMeta.parent.pin));
+    }catch(e){
+      console.warn('移行用サインインエラー', e);
+    }
+  }
+  // 平文の暗証番号をFirestoreから消す(これ以降はFirebase Authだけが本人確認を行う)
+  const newMeta = {
     t1:{name:usersMeta.t1.name}, t2:{name:usersMeta.t2.name}, parent:{name:usersMeta.parent.name},
     authReady:true
   };
-  await db.collection('meta').doc('users').set(usersMeta);
+  try{
+    await db.collection('meta').doc('users').set(newMeta);
+    usersMeta = newMeta;
+  }catch(e){
+    console.warn('meta/users更新エラー(次回また移行を試みます)', e);
+  }
+  await auth.signOut();
 }
 
 async function boot(){
-  const doc = await db.collection('meta').doc('users').get();
-  if(!doc.exists){ showScreen('#scr-setup'); return; }
-  usersMeta = doc.data();
-  await migrateToAuthIfNeeded();
-
+  // まず認証状態の監視を先に始める(これで画面遷移は必ず動く)
   auth.onAuthStateChanged(user=>{
-    if(user){
+    if(user && usersMeta){
       const uid = user.email.split('@')[0];
       if(usersMeta[uid]) enterApp(uid);
       else { renderLogin(); showScreen('#scr-login'); }
-    } else {
+    } else if(usersMeta) {
       renderLogin(); showScreen('#scr-login');
     }
   });
+
+  let doc;
+  try{
+    doc = await db.collection('meta').doc('users').get();
+  }catch(e){
+    console.error('設定の読み込みに失敗', e);
+    showLoadError();
+    return;
+  }
+
+  if(!doc.exists){ showScreen('#scr-setup'); return; }
+  usersMeta = doc.data();
+
+  // 旧データからの移行(失敗しても続行して、ログイン画面は必ず出す)
+  try{
+    await migrateToAuthIfNeeded();
+  }catch(e){
+    console.warn('移行処理をスキップ', e);
+  }
+
+  // 移行後、まだログインしていなければログイン画面を表示
+  if(!auth.currentUser){
+    renderLogin(); showScreen('#scr-login');
+  }
+}
+function showLoadError(){
+  document.body.innerHTML =
+    '<div style="padding:32px;text-align:center;font-family:sans-serif;color:#1F2933">'
+    +'<p style="font-size:18px;font-weight:700;margin-bottom:8px">読み込みに失敗したよ</p>'
+    +'<p style="font-size:14px;color:#6B7480">画面を下に引っ張って更新するか、もう一度開き直してみてね</p>'
+    +'</div>';
 }
 boot();
 
