@@ -9,6 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
@@ -171,7 +172,7 @@ canvas{max-width:100%}
   background:var(--ink);color:#fff;padding:10px 20px;border-radius:999px;
   font-size:14px;opacity:0;transition:.25s;z-index:99;pointer-events:none;white-space:nowrap;
 }
-#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 </style>
 </head>
 <body>
@@ -355,7 +356,13 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+
+// ログイン名(t1/t2/parent)を、Firebase認証用のメールアドレス・パスワードに変換する
+// (画面上は今まで通り「名前選択+4桁の暗証番号」のまま。裏側だけFirebase Authenticationを使う)
+function authEmail(uidKey){ return uidKey+'@kantan-kakeibo.local'; }
+function authPassword(pin){ return pin+'-kk26'; } // Firebaseは6文字以上が必要なため、見えない形で補完
 
 /* ================= 定数 ================= */
 const CATS_EXPENSE = ['食費','家賃','光熱費','通信費','交通費','交際費','趣味娯楽費','教材費','予備費'];
@@ -401,18 +408,62 @@ const $$ = s => [...document.querySelectorAll(s)];
 const yen = n => (n<0?'-':'') + '¥' + Math.abs(n).toLocaleString();
 const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 const monthKey = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function toast(msg, undoFn){
+  const t=$('#toast');
+  t.innerHTML='';
+  t.appendChild(document.createTextNode(msg));
+  if(undoFn){
+    const btn=document.createElement('button');
+    btn.textContent='元に戻す';
+    btn.style.cssText='margin-left:10px;color:#9FE0C0;font-weight:700;text-decoration:underline;background:none;border:none;font:inherit;';
+    btn.onclick=async()=>{ btn.disabled=true; t.classList.remove('show'); await undoFn(); };
+    t.appendChild(btn);
+  }
+  t.classList.add('show');
+  clearTimeout(t._hideTimer);
+  t._hideTimer=setTimeout(()=>t.classList.remove('show'), undoFn?5000:2200);
+}
 function showScreen(id){ $$('.screen').forEach(s=>s.classList.remove('active')); $(id).classList.add('active'); }
 function zenToHan(s){ return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0)-0xFEE0)); }
 
 /* ================= 起動 ================= */
+async function migrateToAuthIfNeeded(){
+  // 以前からのデータ(暗証番号が平文でmeta/usersに入っている状態)を、
+  // Firebase Authenticationのアカウントに一度だけ移行する
+  if(usersMeta.authReady) return;
+  for(const uid of ['t1','t2','parent']){
+    const pin=usersMeta[uid].pin;
+    if(!pin) continue;
+    try{
+      await auth.createUserWithEmailAndPassword(authEmail(uid), authPassword(pin));
+    }catch(e){
+      if(e.code!=='auth/email-already-in-use') console.warn('移行エラー',uid,e);
+    }
+  }
+  await auth.signOut();
+  // 移行が終わったら、平文の暗証番号はFirestoreから消す(これ以降はFirebase Authだけが本人確認を行う)
+  usersMeta = {
+    t1:{name:usersMeta.t1.name}, t2:{name:usersMeta.t2.name}, parent:{name:usersMeta.parent.name},
+    authReady:true
+  };
+  await db.collection('meta').doc('users').set(usersMeta);
+}
+
 async function boot(){
   const doc = await db.collection('meta').doc('users').get();
   if(!doc.exists){ showScreen('#scr-setup'); return; }
   usersMeta = doc.data();
-  const saved = localStorage.getItem('kakeibo_uid');
-  if(saved && usersMeta[saved]){ enterApp(saved); }
-  else { renderLogin(); showScreen('#scr-login'); }
+  await migrateToAuthIfNeeded();
+
+  auth.onAuthStateChanged(user=>{
+    if(user){
+      const uid = user.email.split('@')[0];
+      if(usersMeta[uid]) enterApp(uid);
+      else { renderLogin(); showScreen('#scr-login'); }
+    } else {
+      renderLogin(); showScreen('#scr-login');
+    }
+  });
 }
 boot();
 
@@ -423,7 +474,18 @@ $('#su-save').onclick = async () => {
   const pn=$('#su-p-name').value.trim(),   pp=$('#su-p-pin').value.trim();
   if(!t1n||!t2n||!pn){ $('#su-err').textContent='名前をすべて入力してね'; return; }
   if(![t1p,t2p,pp].every(p=>/^\d{4}$/.test(p))){ $('#su-err').textContent='暗証番号は4桁の数字で入力してね'; return; }
-  usersMeta = { t1:{name:t1n,pin:t1p}, t2:{name:t2n,pin:t2p}, parent:{name:pn,pin:pp} };
+  const btn=$('#su-save'); btn.disabled=true; btn.textContent='設定中…';
+  try{
+    for(const [uid,pin] of [['t1',t1p],['t2',t2p],['parent',pp]]){
+      await auth.createUserWithEmailAndPassword(authEmail(uid), authPassword(pin));
+    }
+    await auth.signOut();
+  }catch(e){
+    $('#su-err').textContent='作成に失敗したよ。もう一度試してみてね';
+    btn.disabled=false; btn.textContent='この内容ではじめる';
+    return;
+  }
+  usersMeta = { t1:{name:t1n}, t2:{name:t2n}, parent:{name:pn}, authReady:true };
   await db.collection('meta').doc('users').set(usersMeta);
   renderLogin(); showScreen('#scr-login'); toast('設定できたよ!');
 };
@@ -441,14 +503,20 @@ function renderLogin(){
   });
 }
 $('#pin-back').onclick=()=>{ $('#pin-box').style.display='none'; pendingUid=null; };
-$('#pin-go').onclick=()=>{
+$('#pin-go').onclick=async()=>{
   if(!pendingUid) return;
-  if($('#pin-input').value===usersMeta[pendingUid].pin){
-    localStorage.setItem('kakeibo_uid',pendingUid); enterApp(pendingUid);
-  } else { $('#login-err').textContent='暗証番号がちがうよ'; }
+  const pin=$('#pin-input').value.trim();
+  const btn=$('#pin-go'); btn.disabled=true;
+  try{
+    await auth.signInWithEmailAndPassword(authEmail(pendingUid), authPassword(pin));
+    // enterAppはonAuthStateChangedから自動的に呼ばれる
+  }catch(e){
+    $('#login-err').textContent='暗証番号がちがうよ';
+  }
+  btn.disabled=false;
 };
-$('#btn-logout').onclick=()=>{
-  localStorage.removeItem('kakeibo_uid');
+$('#btn-logout').onclick=async()=>{
+  await auth.signOut();
   unsubs.forEach(u=>u()); unsubs=[];
   me=null; renderLogin(); $('#pin-box').style.display='none'; showScreen('#scr-login');
 };
@@ -712,7 +780,14 @@ function renderHistory(){
     `;
     if(me!=='parent'){
       const del=document.createElement('button'); del.className='del'; del.textContent='×';
-      del.onclick=async()=>{ if(confirm('この記録を削除する?')){ await db.collection('users').doc(me).collection('tx').doc(tx.id).delete(); toast('削除したよ'); } };
+      del.onclick=async()=>{
+        const original={...tx}; delete original.owner; delete original.id;
+        await db.collection('users').doc(me).collection('tx').doc(tx.id).delete();
+        toast('削除したよ', async()=>{
+          await db.collection('users').doc(me).collection('tx').add(original);
+          toast('元に戻したよ');
+        });
+      };
       el.appendChild(del);
     }
     box.appendChild(el);
