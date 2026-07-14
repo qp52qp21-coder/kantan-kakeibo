@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --ink:#1F2933;
@@ -272,6 +273,7 @@ canvas{max-width:100%}
         <button class="btn" id="in-save">記録する</button>
       </div>
       <p class="voice-hint" id="voice-hint">🎤 音声「ラーメン 800円 食費」／📷 レシート撮影でも入力できるよ</p>
+      <div id="ocr-preview" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;font-size:12px;color:var(--ink-soft);white-space:pre-wrap;max-height:160px;overflow-y:auto"></div>
     </section>
 
     <!-- 履歴ページ -->
@@ -310,6 +312,11 @@ canvas{max-width:100%}
       </div>
       <div class="card"><h3>カテゴリー別支出</h3><canvas id="chart-pie"></canvas></div>
       <div class="card"><h3>月ごとの推移(6か月)</h3><canvas id="chart-bar"></canvas></div>
+      <div class="card">
+        <h3>データの出力</h3>
+        <button class="btn" id="export-month">📄 この月をExcelに出力</button>
+        <button class="btn ghost" id="export-all" style="margin-top:6px;background:var(--bg);color:var(--ink);font-weight:600">📄 すべての記録をExcelに出力</button>
+      </div>
     </section>
 
     <!-- 設定ページ -->
@@ -581,6 +588,36 @@ $('#mic-fab').onclick=startVoice;
 
 /* ================= レシート撮影(OCR) ================= */
 $('#cam-fab').onclick=()=>{ switchPage('input'); $('#receipt-input').click(); };
+
+// 写真を読み取りやすいよう加工する(拡大・グレースケール化・コントラスト強調)
+function preprocessReceiptImage(file){
+  return new Promise((resolve,reject)=>{
+    const imgEl=new Image();
+    const url=URL.createObjectURL(file);
+    imgEl.onload=()=>{
+      const scale=Math.min(2200/imgEl.width, 3); // 大きくしすぎないよう上限あり
+      const w=Math.round(imgEl.width*scale), h=Math.round(imgEl.height*scale);
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(imgEl,0,0,w,h);
+      const imgData=ctx.getImageData(0,0,w,h);
+      const d=imgData.data;
+      // グレースケール化 + コントラスト強調(単純な二値化に近い処理)
+      for(let i=0;i<d.length;i+=4){
+        const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        const boosted=gray<150 ? Math.max(0,gray-30) : Math.min(255,gray+40);
+        d[i]=d[i+1]=d[i+2]=boosted;
+      }
+      ctx.putImageData(imgData,0,0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob=>resolve(blob),'image/png');
+    };
+    imgEl.onerror=reject;
+    imgEl.src=url;
+  });
+}
+
 $('#receipt-input').onchange=async(e)=>{
   const file=e.target.files[0];
   e.target.value='';
@@ -589,31 +626,52 @@ $('#receipt-input').onchange=async(e)=>{
   camBtn.classList.add('busy');
   toast('レシートを読み取っているよ…少し待ってね');
   try{
-    const { data:{ text } } = await Tesseract.recognize(file,'jpn');
+    const processed=await preprocessReceiptImage(file);
+    const worker=await Tesseract.createWorker('jpn');
+    await worker.setParameters({ tessedit_pageseg_mode:'6' }); // レシートのような単一ブロックの文字列を想定
+    const { data:{ text } } = await worker.recognize(processed);
+    await worker.terminate();
     applyReceiptText(text);
   }catch(err){
     toast('うまく読み取れなかった…もう一度撮ってみて');
   }
   camBtn.classList.remove('busy');
 };
+
 function applyReceiptText(rawText){
   const t=zenToHan(rawText);
   const lines=t.split('\n').map(l=>l.trim()).filter(Boolean);
 
-  // 金額: 「合計」「お会計」などの行を優先して探す
+  // 読み取った内容を画面下に表示して、自分の目でも確認・手直しできるようにする
+  const preview=$('#ocr-preview');
+  preview.textContent='【読み取った文字】\n'+(rawText.trim()||'(文字を検出できなかったよ)');
+  preview.style.display='block';
+
+  // 金額: 「合計」を優先し、無ければ「お会計」「計」なども探す。receiptは下の方に合計が来ることが多いので下から探す
   let amount=null;
-  const totalWords=['合計','ごうけい','お会計','お買上','買上げ','小計','計'];
-  for(const line of lines){
-    if(totalWords.some(w=>line.includes(w))){
-      const m=line.match(/([\d,]{3,})/);
-      if(m){ amount=parseInt(m[1].replace(/,/g,''),10); break; }
+  const primary=['合計金額','合計'];
+  const secondary=['お会計','お買上','買上げ','ごうけい'];
+  const tertiary=['計'];
+  const excludeWords=['tel','電話','ポイント','pt','no.','領収','登録番号'];
+  function findAmountByWords(words, excludeSmall){
+    for(let i=lines.length-1;i>=0;i--){
+      const line=lines[i];
+      if(excludeWords.some(w=>line.toLowerCase().includes(w))) continue;
+      if(excludeSmall && line.includes('小')) continue;
+      if(words.some(w=>line.includes(w))){
+        const m=line.match(/([\d,]{3,})/);
+        if(m) return parseInt(m[1].replace(/,/g,''),10);
+      }
     }
+    return null;
   }
+  amount=findAmountByWords(primary,false) ?? findAmountByWords(secondary,false) ?? findAmountByWords(tertiary,true);
+
   if(amount==null){
-    // 見つからない場合は、文中の数字のうち一番大きいものを合計とみなす
+    // 見つからない場合は、文中の数字のうち大きめのものを合計とみなす(電話番号・バーコード番号などは除外)
     const nums=[...t.matchAll(/([\d,]{3,})/g)]
       .map(m=>parseInt(m[1].replace(/,/g,''),10))
-      .filter(n=>n>0 && n<1000000);
+      .filter(n=>n>=50 && n<300000);
     if(nums.length) amount=Math.max(...nums);
   }
   if(amount!=null) $('#in-amount').value=amount;
@@ -645,8 +703,11 @@ function applyReceiptText(rawText){
   if(amount!=null) parts.push('金額');
   if(date) parts.push('日付');
   parts.push('カテゴリー(食費)');
-  toast('レシートから'+parts.join('・')+'を入れたよ。確認して記録してね');
+  toast(amount!=null
+    ? 'レシートから'+parts.join('・')+'を入れたよ。確認して記録してね'
+    : '金額をうまく読み取れなかった…下の読み取り結果を見て、金額欄に手入力してね');
 }
+
 
 // 「1万円」「3万5000円」「2千円」なども含めて金額を読み取る
 function parseVoiceAmount(t){
@@ -878,6 +939,55 @@ async function renderSummary(){
 }
 $('#m-prev').onclick=()=>{ curMonth=new Date(curMonth.getFullYear(),curMonth.getMonth()-1,1); renderSummary(); };
 $('#m-next').onclick=()=>{ curMonth=new Date(curMonth.getFullYear(),curMonth.getMonth()+1,1); renderSummary(); };
+
+/* ================= Excel出力 ================= */
+function txToRow(tx, owner){
+  const methodLabel = tx.type==='transfer'
+    ? 'SBI → '+(ACCOUNTS.find(a=>a.id===tx.to)?.label||'')
+    : (ACCOUNTS.find(a=>a.id===tx.method)?.label||'');
+  const typeLabel = tx.type==='income'?'収入':tx.type==='expense'?'支出':'振替';
+  const row = {
+    '日付': tx.date,
+    '種類': typeLabel,
+    'カテゴリー': tx.type==='transfer'?'':(tx.category||''),
+    '支払い方法': methodLabel,
+    '金額': tx.amount,
+    'メモ': tx.memo||''
+  };
+  if(owner) row['記録した人'] = usersMeta[owner]?.name || owner;
+  return row;
+}
+function buildRows(txs, withOwner){
+  return txs
+    .slice()
+    .sort((a,b)=>a.date.localeCompare(b.date))
+    .map(tx=>txToRow(tx, withOwner ? tx.owner : null));
+}
+function downloadWorkbook(rows, filename){
+  if(!rows.length){ toast('出力できるデータがまだないよ'); return; }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:12},{wch:8},{wch:12},{wch:14},{wch:10},{wch:24},{wch:10}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '記録');
+  XLSX.writeFile(wb, filename);
+  toast('Excelファイルを出力したよ');
+}
+$('#export-month').onclick=()=>{
+  const targets=currentTargets();
+  const withOwner = targets.length>1;
+  const [ms,me_]=monthRange(curMonth);
+  let txs=[];
+  targets.forEach(t=>txCache[t].forEach(tx=>{ if(tx.date>=ms&&tx.date<=me_) txs.push({...tx,owner:t}); }));
+  const label=curMonth.getFullYear()+'-'+String(curMonth.getMonth()+1).padStart(2,'0');
+  downloadWorkbook(buildRows(txs, withOwner), `かんたん家計簿_${label}.xlsx`);
+};
+$('#export-all').onclick=()=>{
+  const targets=currentTargets();
+  const withOwner = targets.length>1;
+  let txs=[];
+  targets.forEach(t=>txCache[t].forEach(tx=>txs.push({...tx,owner:t})));
+  downloadWorkbook(buildRows(txs, withOwner), `かんたん家計簿_全期間.xlsx`);
+};
 
 /* ================= ストリーク ================= */
 function renderStreak(){
