@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 :root{
   --ink:#1F2933;
@@ -128,10 +129,18 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 @media (max-width:552px){.mic-fab{right:16px}}
 .mic-fab.listening{animation:pulse 1s infinite}
 @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
+.cam-fab{
+  position:fixed;right:calc(50% - 250px + 76px);bottom:86px;z-index:9;
+  width:56px;height:56px;border-radius:50%;background:var(--card);color:var(--accent);
+  font-size:24px;box-shadow:0 4px 14px rgba(0,0,0,.15);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+}
+@media (max-width:552px){.cam-fab{right:92px}}
+.cam-fab.busy{animation:pulse 1s infinite}
 .voice-hint{
   font-size:13px;color:var(--ink-soft);text-align:center;margin-top:6px;min-height:1.5em;
 }
-@media (prefers-reduced-motion:reduce){.mic-fab.listening{animation:none}}
+@media (prefers-reduced-motion:reduce){.mic-fab.listening,.cam-fab.busy{animation:none}}
 
 /* ---- 残高 ---- */
 .bal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -261,9 +270,8 @@ canvas{max-width:100%}
         <div class="field"><label>日付</label><input type="date" id="in-date"></div>
         <div class="field"><label>メモ(任意)</label><input id="in-memo" placeholder="例: コンビニ"></div>
         <button class="btn" id="in-save">記録する</button>
-        <button class="btn" id="in-voice" style="background:var(--accent-soft);color:var(--accent)">🎤 音声で入力する</button>
       </div>
-      <p class="voice-hint" id="voice-hint">🎤 ボタンで音声入力「ラーメン 800円 食費」</p>
+      <p class="voice-hint" id="voice-hint">🎤 音声「ラーメン 800円 食費」／📷 レシート撮影でも入力できるよ</p>
     </section>
 
     <!-- 履歴ページ -->
@@ -327,6 +335,8 @@ canvas{max-width:100%}
   </main>
 
   <button class="mic-fab" id="mic-fab" aria-label="音声入力">🎤</button>
+  <button class="cam-fab" id="cam-fab" aria-label="レシート撮影">📷</button>
+  <input type="file" id="receipt-input" accept="image/*" capture="environment" style="display:none">
 
   <nav class="tabs" id="tabs">
     <button data-page="input" class="on"><span class="ico">✏️</span>入力</button>
@@ -461,6 +471,7 @@ function enterApp(uid){
     b.style.display = (isParent && (p==='input'||p==='settings')) ? 'none' : '';
   });
   $('#mic-fab').style.display = isParent?'none':'flex';
+  $('#cam-fab').style.display = isParent?'none':'flex';
   if(isParent){ switchPage('summary'); renderViewerSeg(); }
   else { switchPage('input'); }
 
@@ -490,6 +501,7 @@ function switchPage(p){
   $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.page===p));
   $$('.page').forEach(pg=>pg.classList.toggle('on',pg.id==='page-'+p));
   $('#mic-fab').style.display = (p==='input' && me!=='parent') ? 'flex':'none';
+  $('#cam-fab').style.display = (p==='input' && me!=='parent') ? 'flex':'none';
   if(p==='summary'||p==='history') refreshAll();
 }
 $$('#tabs button').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
@@ -566,12 +578,128 @@ function startVoice(){
   try{ rec.start(); }catch(e){}
 }
 $('#mic-fab').onclick=startVoice;
-$('#in-voice').onclick=startVoice;
+
+/* ================= レシート撮影(OCR) ================= */
+$('#cam-fab').onclick=()=>{ switchPage('input'); $('#receipt-input').click(); };
+$('#receipt-input').onchange=async(e)=>{
+  const file=e.target.files[0];
+  e.target.value='';
+  if(!file) return;
+  const camBtn=$('#cam-fab');
+  camBtn.classList.add('busy');
+  toast('レシートを読み取っているよ…少し待ってね');
+  try{
+    const { data:{ text } } = await Tesseract.recognize(file,'jpn');
+    applyReceiptText(text);
+  }catch(err){
+    toast('うまく読み取れなかった…もう一度撮ってみて');
+  }
+  camBtn.classList.remove('busy');
+};
+function applyReceiptText(rawText){
+  const t=zenToHan(rawText);
+  const lines=t.split('\n').map(l=>l.trim()).filter(Boolean);
+
+  // 金額: 「合計」「お会計」などの行を優先して探す
+  let amount=null;
+  const totalWords=['合計','ごうけい','お会計','お買上','買上げ','小計','計'];
+  for(const line of lines){
+    if(totalWords.some(w=>line.includes(w))){
+      const m=line.match(/([\d,]{3,})/);
+      if(m){ amount=parseInt(m[1].replace(/,/g,''),10); break; }
+    }
+  }
+  if(amount==null){
+    // 見つからない場合は、文中の数字のうち一番大きいものを合計とみなす
+    const nums=[...t.matchAll(/([\d,]{3,})/g)]
+      .map(m=>parseInt(m[1].replace(/,/g,''),10))
+      .filter(n=>n>0 && n<1000000);
+    if(nums.length) amount=Math.max(...nums);
+  }
+  if(amount!=null) $('#in-amount').value=amount;
+
+  // 日付: 2026/07/14, 2026-07-14, 2026年7月14日, 07/14 など
+  let date=null;
+  let m=t.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
+  if(m){
+    date=m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+  }else{
+    m=t.match(/(\d{1,2})[\/\-月](\d{1,2})\s*日?/);
+    if(m){
+      const year=new Date().getFullYear();
+      date=year+'-'+String(+m[1]).padStart(2,'0')+'-'+String(+m[2]).padStart(2,'0');
+    }
+  }
+  if(date) $('#in-date').value=date;
+
+  // 店名らしき行(数字だけの行を除いた最初の行)をメモに
+  const nameLine=lines.find(l=>l.length>=2 && !/^[\d\s\-\/:：¥,円]+$/.test(l));
+  if(nameLine) $('#in-memo').value=nameLine.slice(0,20);
+
+  // カテゴリーは「食費」を初期選択(スーパー・コンビニのレシートが多いため。違う場合は選び直してね)
+  if(inputType!=='expense'){ $$('#type-seg button')[0].click(); }
+  selCat='食費';
+  $$('#in-cats button').forEach(x=>x.classList.toggle('on',x.textContent==='食費'));
+
+  const parts=[];
+  if(amount!=null) parts.push('金額');
+  if(date) parts.push('日付');
+  parts.push('カテゴリー(食費)');
+  toast('レシートから'+parts.join('・')+'を入れたよ。確認して記録してね');
+}
+
+// 「1万円」「3万5000円」「2千円」なども含めて金額を読み取る
+function parseVoiceAmount(t){
+  // 例: 1万5000円 / 1万円 / 3万 / 12000円 / 3000円
+  let m = t.match(/(\d+)\s*万\s*(\d+)?\s*(?:千)?\s*円?/);
+  if(m){
+    const man = parseInt(m[1],10) * 10000;
+    const rest = m[2] ? parseInt(m[2],10) : 0;
+    return man + rest;
+  }
+  // 例: 3千円 / 3千
+  m = t.match(/(\d+)\s*千\s*円?/);
+  if(m) return parseInt(m[1],10) * 1000;
+  // 例: 3000円
+  m = t.match(/([\d,]+)\s*円/);
+  if(m) return parseInt(m[1].replace(/,/g,''),10);
+  // 最後の手段: 最初に出てくる数字のかたまり
+  m = t.match(/([\d,]+)/);
+  if(m) return parseInt(m[1].replace(/,/g,''),10);
+  return null;
+}
+
+// 「7月30日」「7/30」のような言い方から日付を読み取る
+function parseVoiceDate(t){
+  let m = t.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if(!m) m = t.match(/(\d{1,2})\s*[\/\.](\d{1,2})(?!\d)/);
+  if(m){
+    const month=parseInt(m[1],10), day=parseInt(m[2],10);
+    if(month>=1&&month<=12&&day>=1&&day<=31){
+      const now=new Date();
+      let year=now.getFullYear();
+      // 未来すぎる日付(来年分を今年と言い間違えた等)は前年として扱う
+      const candidate=new Date(year,month-1,day);
+      if(candidate - now > 1000*60*60*24*200) year -= 1;
+      return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    }
+  }
+  if(t.includes('今日')) return todayStr();
+  if(t.includes('昨日')){ const d=new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  return null;
+}
+
 function applyVoice(text){
   const t=zenToHan(text);
+
   // 金額
-  const m=t.match(/([\d,]+)\s*円/) || t.match(/([\d,]+)/);
-  if(m) $('#in-amount').value=m[1].replace(/,/g,'');
+  const amount=parseVoiceAmount(t);
+  if(amount!=null) $('#in-amount').value=amount;
+
+  // 日付
+  const date=parseVoiceDate(t);
+  if(date) $('#in-date').value=date;
+
   // カテゴリー
   let hit=null;
   for(const [cat,words] of Object.entries(VOICE_CAT_WORDS)){
@@ -582,12 +710,22 @@ function applyVoice(text){
     selCat=hit;
     $$('#in-cats button').forEach(x=>x.classList.toggle('on',x.textContent===hit));
   }
-  // メモ: 金額とカテゴリ語を除いた残り
-  let memo=t.replace(/[\d,]+\s*円?/,'').trim();
+
+  // メモ: 金額・日付・カテゴリ語を除いた残り
+  let memo=t;
+  memo=memo.replace(/\d{1,2}\s*月\s*\d{1,2}\s*日/,'');
+  memo=memo.replace(/\d+\s*万\s*\d*\s*千?\s*円?/,'');
+  memo=memo.replace(/[\d,]+\s*円?/,'');
+  memo=memo.replace(/(今日|昨日)/,'');
   if(hit) VOICE_CAT_WORDS[hit].forEach(w=>memo=memo.replace(w,''));
   memo=memo.replace(/(で|を|に|買った|使った|払った|の)/g,' ').replace(/\s+/g,' ').trim();
   if(memo) $('#in-memo').value=memo;
-  toast(hit?('金額とカテゴリーを入れたよ'):'金額を入れたよ。カテゴリーを選んでね');
+
+  const parts=[];
+  if(amount!=null) parts.push('金額');
+  if(date) parts.push('日付');
+  if(hit) parts.push('カテゴリー');
+  toast(parts.length? parts.join('・')+'を入れたよ' : 'うまく読み取れなかった…もう一度どうぞ');
 }
 
 /* ================= 残高計算 ================= */
