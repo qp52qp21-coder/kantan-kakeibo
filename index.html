@@ -10,7 +10,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
@@ -130,18 +129,10 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 @media (max-width:552px){.mic-fab{right:16px}}
 .mic-fab.listening{animation:pulse 1s infinite}
 @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
-.cam-fab{
-  position:fixed;right:calc(50% - 250px + 76px);bottom:86px;z-index:9;
-  width:56px;height:56px;border-radius:50%;background:var(--card);color:var(--accent);
-  font-size:24px;box-shadow:0 4px 14px rgba(0,0,0,.15);border:1px solid var(--line);
-  display:flex;align-items:center;justify-content:center;
-}
-@media (max-width:552px){.cam-fab{right:92px}}
-.cam-fab.busy{animation:pulse 1s infinite}
 .voice-hint{
   font-size:13px;color:var(--ink-soft);text-align:center;margin-top:6px;min-height:1.5em;
 }
-@media (prefers-reduced-motion:reduce){.mic-fab.listening,.cam-fab.busy{animation:none}}
+@media (prefers-reduced-motion:reduce){.mic-fab.listening{animation:none}}
 
 /* ---- 残高 ---- */
 .bal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -272,8 +263,7 @@ canvas{max-width:100%}
         <div class="field"><label>メモ(任意)</label><input id="in-memo" placeholder="例: コンビニ"></div>
         <button class="btn" id="in-save">記録する</button>
       </div>
-      <p class="voice-hint" id="voice-hint">🎤 音声「ラーメン 800円 食費」／📷 レシート撮影でも入力できるよ</p>
-      <div id="ocr-preview" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;font-size:12px;color:var(--ink-soft);white-space:pre-wrap;max-height:160px;overflow-y:auto"></div>
+      <p class="voice-hint" id="voice-hint">🎤 ボタンで音声入力「ラーメン 800円 食費」</p>
     </section>
 
     <!-- 履歴ページ -->
@@ -342,8 +332,6 @@ canvas{max-width:100%}
   </main>
 
   <button class="mic-fab" id="mic-fab" aria-label="音声入力">🎤</button>
-  <button class="cam-fab" id="cam-fab" aria-label="レシート撮影">📷</button>
-  <input type="file" id="receipt-input" accept="image/*" capture="environment" style="display:none">
 
   <nav class="tabs" id="tabs">
     <button data-page="input" class="on"><span class="ico">✏️</span>入力</button>
@@ -478,7 +466,6 @@ function enterApp(uid){
     b.style.display = (isParent && (p==='input'||p==='settings')) ? 'none' : '';
   });
   $('#mic-fab').style.display = isParent?'none':'flex';
-  $('#cam-fab').style.display = isParent?'none':'flex';
   if(isParent){ switchPage('summary'); renderViewerSeg(); }
   else { switchPage('input'); }
 
@@ -508,7 +495,6 @@ function switchPage(p){
   $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.page===p));
   $$('.page').forEach(pg=>pg.classList.toggle('on',pg.id==='page-'+p));
   $('#mic-fab').style.display = (p==='input' && me!=='parent') ? 'flex':'none';
-  $('#cam-fab').style.display = (p==='input' && me!=='parent') ? 'flex':'none';
   if(p==='summary'||p==='history') refreshAll();
 }
 $$('#tabs button').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
@@ -585,128 +571,6 @@ function startVoice(){
   try{ rec.start(); }catch(e){}
 }
 $('#mic-fab').onclick=startVoice;
-
-/* ================= レシート撮影(OCR) ================= */
-$('#cam-fab').onclick=()=>{ switchPage('input'); $('#receipt-input').click(); };
-
-// 写真を読み取りやすいよう加工する(拡大・グレースケール化・コントラスト強調)
-function preprocessReceiptImage(file){
-  return new Promise((resolve,reject)=>{
-    const imgEl=new Image();
-    const url=URL.createObjectURL(file);
-    imgEl.onload=()=>{
-      const scale=Math.min(2200/imgEl.width, 3); // 大きくしすぎないよう上限あり
-      const w=Math.round(imgEl.width*scale), h=Math.round(imgEl.height*scale);
-      const canvas=document.createElement('canvas');
-      canvas.width=w; canvas.height=h;
-      const ctx=canvas.getContext('2d');
-      ctx.drawImage(imgEl,0,0,w,h);
-      const imgData=ctx.getImageData(0,0,w,h);
-      const d=imgData.data;
-      // グレースケール化 + コントラスト強調(単純な二値化に近い処理)
-      for(let i=0;i<d.length;i+=4){
-        const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-        const boosted=gray<150 ? Math.max(0,gray-30) : Math.min(255,gray+40);
-        d[i]=d[i+1]=d[i+2]=boosted;
-      }
-      ctx.putImageData(imgData,0,0);
-      URL.revokeObjectURL(url);
-      canvas.toBlob(blob=>resolve(blob),'image/png');
-    };
-    imgEl.onerror=reject;
-    imgEl.src=url;
-  });
-}
-
-$('#receipt-input').onchange=async(e)=>{
-  const file=e.target.files[0];
-  e.target.value='';
-  if(!file) return;
-  const camBtn=$('#cam-fab');
-  camBtn.classList.add('busy');
-  toast('レシートを読み取っているよ…少し待ってね');
-  try{
-    const processed=await preprocessReceiptImage(file);
-    const worker=await Tesseract.createWorker('jpn');
-    await worker.setParameters({ tessedit_pageseg_mode:'6' }); // レシートのような単一ブロックの文字列を想定
-    const { data:{ text } } = await worker.recognize(processed);
-    await worker.terminate();
-    applyReceiptText(text);
-  }catch(err){
-    toast('うまく読み取れなかった…もう一度撮ってみて');
-  }
-  camBtn.classList.remove('busy');
-};
-
-function applyReceiptText(rawText){
-  const t=zenToHan(rawText);
-  const lines=t.split('\n').map(l=>l.trim()).filter(Boolean);
-
-  // 読み取った内容を画面下に表示して、自分の目でも確認・手直しできるようにする
-  const preview=$('#ocr-preview');
-  preview.textContent='【読み取った文字】\n'+(rawText.trim()||'(文字を検出できなかったよ)');
-  preview.style.display='block';
-
-  // 金額: 「合計」を優先し、無ければ「お会計」「計」なども探す。receiptは下の方に合計が来ることが多いので下から探す
-  let amount=null;
-  const primary=['合計金額','合計'];
-  const secondary=['お会計','お買上','買上げ','ごうけい'];
-  const tertiary=['計'];
-  const excludeWords=['tel','電話','ポイント','pt','no.','領収','登録番号'];
-  function findAmountByWords(words, excludeSmall){
-    for(let i=lines.length-1;i>=0;i--){
-      const line=lines[i];
-      if(excludeWords.some(w=>line.toLowerCase().includes(w))) continue;
-      if(excludeSmall && line.includes('小')) continue;
-      if(words.some(w=>line.includes(w))){
-        const m=line.match(/([\d,]{3,})/);
-        if(m) return parseInt(m[1].replace(/,/g,''),10);
-      }
-    }
-    return null;
-  }
-  amount=findAmountByWords(primary,false) ?? findAmountByWords(secondary,false) ?? findAmountByWords(tertiary,true);
-
-  if(amount==null){
-    // 見つからない場合は、文中の数字のうち大きめのものを合計とみなす(電話番号・バーコード番号などは除外)
-    const nums=[...t.matchAll(/([\d,]{3,})/g)]
-      .map(m=>parseInt(m[1].replace(/,/g,''),10))
-      .filter(n=>n>=50 && n<300000);
-    if(nums.length) amount=Math.max(...nums);
-  }
-  if(amount!=null) $('#in-amount').value=amount;
-
-  // 日付: 2026/07/14, 2026-07-14, 2026年7月14日, 07/14 など
-  let date=null;
-  let m=t.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
-  if(m){
-    date=m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
-  }else{
-    m=t.match(/(\d{1,2})[\/\-月](\d{1,2})\s*日?/);
-    if(m){
-      const year=new Date().getFullYear();
-      date=year+'-'+String(+m[1]).padStart(2,'0')+'-'+String(+m[2]).padStart(2,'0');
-    }
-  }
-  if(date) $('#in-date').value=date;
-
-  // 店名らしき行(数字だけの行を除いた最初の行)をメモに
-  const nameLine=lines.find(l=>l.length>=2 && !/^[\d\s\-\/:：¥,円]+$/.test(l));
-  if(nameLine) $('#in-memo').value=nameLine.slice(0,20);
-
-  // カテゴリーは「食費」を初期選択(スーパー・コンビニのレシートが多いため。違う場合は選び直してね)
-  if(inputType!=='expense'){ $$('#type-seg button')[0].click(); }
-  selCat='食費';
-  $$('#in-cats button').forEach(x=>x.classList.toggle('on',x.textContent==='食費'));
-
-  const parts=[];
-  if(amount!=null) parts.push('金額');
-  if(date) parts.push('日付');
-  parts.push('カテゴリー(食費)');
-  toast(amount!=null
-    ? 'レシートから'+parts.join('・')+'を入れたよ。確認して記録してね'
-    : '金額をうまく読み取れなかった…下の読み取り結果を見て、金額欄に手入力してね');
-}
 
 
 // 「1万円」「3万5000円」「2千円」なども含めて金額を読み取る
