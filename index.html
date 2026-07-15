@@ -316,6 +316,8 @@ canvas{max-width:100%}
         <h3>残高の初期値(円)</h3>
         <div class="field"><label>SBIネット銀行</label><input id="set-sbi" inputmode="numeric"></div>
         <div class="field"><label>PayPay</label><input id="set-paypay" inputmode="numeric"></div>
+        <div class="field"><label>Suica</label><input id="set-suica" inputmode="numeric"></div>
+        <div class="field"><label>メルペイ</label><input id="set-merpay" inputmode="numeric"></div>
         <div class="field"><label>現金</label><input id="set-cash" inputmode="numeric"></div>
         <div class="field"><label>その他</label><input id="set-other" inputmode="numeric"></div>
         <button class="btn" id="set-save-bal">残高を保存</button>
@@ -371,12 +373,16 @@ const CATS_INCOME  = ['仕送り','アルバイト','その他収入'];
 const METHODS = [
   {id:'sbi',   label:'SBIデビット'},
   {id:'paypay',label:'PayPay'},
+  {id:'suica', label:'Suica'},
+  {id:'merpay',label:'メルペイ'},
   {id:'cash',  label:'現金'},
   {id:'other', label:'その他'}
 ];
 const ACCOUNTS = [
   {id:'sbi',   label:'SBIネット銀行'},
   {id:'paypay',label:'PayPay'},
+  {id:'suica', label:'Suica'},
+  {id:'merpay',label:'メルペイ'},
   {id:'cash',  label:'現金'},
   {id:'other', label:'その他'}
 ];
@@ -602,6 +608,7 @@ function enterApp(uid){
     db.collection('users').doc(uid).get().then(d=>{
       const s=d.data()||{};
       $('#set-sbi').value=s.initSbi??''; $('#set-paypay').value=s.initPaypay??'';
+      $('#set-suica').value=s.initSuica??''; $('#set-merpay').value=s.initMerpay??'';
       $('#set-cash').value=s.initCash??''; $('#set-other').value=s.initOther??'';
       if(s.notifyTime) $('#set-notify').value=s.notifyTime;
       checkReminder(s.notifyTime);
@@ -778,7 +785,7 @@ function applyVoice(text){
 async function calcBalances(uid, untilDate){
   const doc = await db.collection('users').doc(uid).get();
   const s=doc.data()||{};
-  const bal={sbi:+s.initSbi||0, paypay:+s.initPaypay||0, cash:+s.initCash||0, other:+s.initOther||0};
+  const bal={sbi:+s.initSbi||0, paypay:+s.initPaypay||0, suica:+s.initSuica||0, merpay:+s.initMerpay||0, cash:+s.initCash||0, other:+s.initOther||0};
   (txCache[uid]||[]).forEach(tx=>{
     if(untilDate && tx.date>untilDate) return;
     if(tx.type==='expense') bal[tx.method]-=tx.amount;
@@ -1006,6 +1013,8 @@ $('#set-save-bal').onclick=async()=>{
   await db.collection('users').doc(me).set({
     initSbi:+zenToHan($('#set-sbi').value||'0'),
     initPaypay:+zenToHan($('#set-paypay').value||'0'),
+    initSuica:+zenToHan($('#set-suica').value||'0'),
+    initMerpay:+zenToHan($('#set-merpay').value||'0'),
     initCash:+zenToHan($('#set-cash').value||'0'),
     initOther:+zenToHan($('#set-other').value||'0'),
   },{merge:true});
