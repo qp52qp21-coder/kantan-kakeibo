@@ -465,47 +465,57 @@ async function migrateToAuthIfNeeded(){
   await auth.signOut();
 }
 
+let booted = false; // usersMeta読み込み完了フラグ
+
+function routeByAuth(){
+  // 現在のログイン状態に応じて、必ずどれかの画面を表示する
+  if(!usersMeta) return;
+  const user = auth.currentUser;
+  if(user){
+    const uid = user.email.split('@')[0];
+    if(usersMeta[uid]){ enterApp(uid); return; }
+  }
+  renderLogin(); showScreen('#scr-login');
+}
+
 async function boot(){
-  // まず認証状態の監視を先に始める(これで画面遷移は必ず動く)
-  auth.onAuthStateChanged(user=>{
-    if(user && usersMeta){
-      const uid = user.email.split('@')[0];
-      if(usersMeta[uid]) enterApp(uid);
-      else { renderLogin(); showScreen('#scr-login'); }
-    } else if(usersMeta) {
-      renderLogin(); showScreen('#scr-login');
-    }
-  });
+  // ログイン状態が変わった時(ログイン/ログアウト)に画面を切り替える
+  auth.onAuthStateChanged(()=>{ if(booted) routeByAuth(); });
 
   let doc;
   try{
-    doc = await db.collection('meta').doc('users').get();
+    doc = await Promise.race([
+      db.collection('meta').doc('users').get(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('load-timeout')), 8000))
+    ]);
   }catch(e){
     console.error('設定の読み込みに失敗', e);
     showLoadError();
     return;
   }
 
-  if(!doc.exists){ showScreen('#scr-setup'); return; }
+  if(!doc.exists){ booted = true; showScreen('#scr-setup'); return; }
   usersMeta = doc.data();
 
-  // 旧データからの移行(失敗しても続行して、ログイン画面は必ず出す)
+  // 旧データからの移行(失敗・停止しても、最大6秒で必ず打ち切って画面を出す)
   try{
-    await migrateToAuthIfNeeded();
+    await Promise.race([
+      migrateToAuthIfNeeded(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('migrate-timeout')), 6000))
+    ]);
   }catch(e){
-    console.warn('移行処理をスキップ', e);
+    console.warn('移行処理を打ち切り(次回再試行)', e);
   }
 
-  // 移行後、まだログインしていなければログイン画面を表示
-  if(!auth.currentUser){
-    renderLogin(); showScreen('#scr-login');
-  }
+  booted = true;
+  routeByAuth(); // ← ログイン済みでも未ログインでも、ここで必ず画面が出る
 }
 function showLoadError(){
   document.body.innerHTML =
-    '<div style="padding:32px;text-align:center;font-family:sans-serif;color:#1F2933">'
+    '<div style="padding:48px 32px;text-align:center;font-family:sans-serif;color:#1F2933">'
     +'<p style="font-size:18px;font-weight:700;margin-bottom:8px">読み込みに失敗したよ</p>'
-    +'<p style="font-size:14px;color:#6B7480">画面を下に引っ張って更新するか、もう一度開き直してみてね</p>'
+    +'<p style="font-size:14px;color:#6B7480;margin-bottom:24px">電波の良い場所でもう一度試してみてね</p>'
+    +'<button onclick="location.reload()" style="padding:12px 28px;border:none;border-radius:12px;background:#2F7D5B;color:#fff;font-size:16px;font-weight:700">再読み込み</button>'
     +'</div>';
 }
 boot();
