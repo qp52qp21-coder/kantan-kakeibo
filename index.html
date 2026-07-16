@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#B8BCC2">
+<meta name="theme-color" content="#F0F6F1">
 <title>かんたん家計簿</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -14,13 +14,13 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
-  --ink:#3A3D42;
-  --ink-soft:#8A8F97;
-  --bg:#EDEEF0;
+  --ink:#374440;
+  --ink-soft:#7F8F86;
+  --bg:#F0F6F1;
   --card:#FFFFFF;
-  --line:#DEE0E4;
-  --accent:#5E6B70;
-  --accent-soft:#E7EAEC;
+  --line:#DCEBE0;
+  --accent:#4E8A6C;
+  --accent-soft:#E2F0E8;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -521,7 +521,7 @@ function showLoadError(){
     '<div style="padding:48px 32px;text-align:center;font-family:sans-serif;color:#1F2933">'
     +'<p style="font-size:18px;font-weight:700;margin-bottom:8px">読み込みに失敗したよ</p>'
     +'<p style="font-size:14px;color:#6B7480;margin-bottom:24px">電波の良い場所でもう一度試してみてね</p>'
-    +'<button onclick="location.reload()" style="padding:12px 28px;border:none;border-radius:12px;background:#5E6B70;color:#fff;font-size:16px;font-weight:700">再読み込み</button>'
+    +'<button onclick="location.reload()" style="padding:12px 28px;border:none;border-radius:12px;background:#4E8A6C;color:#fff;font-size:16px;font-weight:700">再読み込み</button>'
     +'</div>';
 }
 boot();
@@ -911,7 +911,7 @@ async function renderSummary(){
     type:'doughnut',
     data:{labels:pieLabels.length?pieLabels:['データなし'],
       datasets:[{data:pieData.length?pieData:[1],
-        backgroundColor:['#3A3D42','#565B62','#6E747C','#878E96','#A1A8B0','#BAC0C7','#CFD3D9','#7E8891','#9AA1A9']}]},
+        backgroundColor:['#3E7059','#4E8A6C','#66A183','#7EB899','#98CCAF','#B4DEC6','#D0EDDC','#8FAF9D','#6E8C7C']}]},
     options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
   });
 
@@ -929,8 +929,8 @@ async function renderSummary(){
   barChart=new Chart($('#chart-bar'),{
     type:'bar',
     data:{labels,datasets:[
-      {label:'収入',data:inData,backgroundColor:'#5E6B70'},
-      {label:'支出',data:exData,backgroundColor:'#C2C6CC'}
+      {label:'収入',data:inData,backgroundColor:'#4E8A6C'},
+      {label:'支出',data:exData,backgroundColor:'#C6D9CC'}
     ]},
     options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
       scales:{y:{ticks:{font:{size:10}}},x:{ticks:{font:{size:11}}}}}
