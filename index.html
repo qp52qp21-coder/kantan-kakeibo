@@ -160,6 +160,7 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 .month-nav h3{font-size:18px;color:var(--ink)}
 .month-nav button{font-size:22px;color:var(--accent);padding:4px 14px}
 .sum-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center}
+.sum-grid.cols-2{grid-template-columns:1fr 1fr}
 .sum-grid .name{font-size:12px;color:var(--ink-soft)}
 .sum-grid .val{font-size:16px;font-weight:700}
 canvas{max-width:100%}
@@ -283,9 +284,8 @@ canvas{max-width:100%}
         <button id="m-next">›</button>
       </div>
       <div class="card">
-        <h3>前月からの繰越(残高合計)</h3>
-        <div class="sum-grid">
-          <div><div class="name">繰越</div><div class="val" id="s-carry">-</div></div>
+        <h3>今月のうごき</h3>
+        <div class="sum-grid cols-2">
           <div><div class="name">今月の収支</div><div class="val" id="s-net">-</div></div>
           <div><div class="name">月末残高</div><div class="val" id="s-endbal">-</div></div>
         </div>
@@ -402,7 +402,7 @@ const VOICE_CAT_WORDS = {
 /* ================= 状態 ================= */
 let usersMeta = null;          // {t1:{name,pin}, t2:{name,pin}, parent:{name,pin}}
 let me = null;                 // 't1' | 't2' | 'parent'
-let viewTarget = 't1';         // 親の閲覧対象 't1'|'t2'|'both'
+let viewTarget = 't1';         // 親の閲覧対象 't1'|'t2'
 let inputType = 'expense';
 let selCat = null, selMethod = null, selTransferTo = null;
 let txCache = {t1:[], t2:[]};  // 取引キャッシュ
@@ -799,12 +799,13 @@ async function calcBalances(uid, untilDate){
 /* ================= 履歴 ================= */
 function currentTargets(){
   if(me!=='parent') return [me];
-  return viewTarget==='both'?['t1','t2']:[viewTarget];
+  return [viewTarget];
 }
 function renderViewerSeg(){
+  if(viewTarget==='both') viewTarget='t1';
   ['#hist-viewer','#sum-viewer'].forEach(sel=>{
     const box=$(sel); box.style.display='flex'; box.innerHTML='';
-    [['t1',usersMeta.t1.name],['t2',usersMeta.t2.name],['both','二人合計']].forEach(([v,label])=>{
+    [['t1',usersMeta.t1.name],['t2',usersMeta.t2.name]].forEach(([v,label])=>{
       const b=document.createElement('button'); b.textContent=label;
       b.classList.toggle('on',v===viewTarget);
       b.onclick=()=>{ viewTarget=v; renderViewerSeg(); refreshAll(); };
@@ -830,11 +831,10 @@ function renderHistory(){
     const methodLabel = tx.type==='transfer'
       ? 'SBI → '+(ACCOUNTS.find(a=>a.id===tx.to)?.label||'')
       : (ACCOUNTS.find(a=>a.id===tx.method)?.label||'');
-    const ownerTag = me==='parent'&&viewTarget==='both' ? '['+usersMeta[tx.owner].name+'] ' : '';
     const cat = tx.type==='transfer'?'振替':tx.category;
     el.innerHTML=`
       <div>
-        <div class="cat">${ownerTag}${cat}</div>
+        <div class="cat">${cat}</div>
         <div class="sub">${methodLabel}${tx.memo?' ・ '+tx.memo:''}</div>
       </div>
       <div class="amt ${tx.type==='income'?'in':''}">${tx.type==='income'?'+':tx.type==='expense'?'-':''}${yen(tx.amount).replace('¥','¥')}</div>
@@ -881,16 +881,12 @@ async function renderSummary(){
   $('#s-days').textContent=days.size+'日';
   $('#s-net').textContent=yen(income-expense);
 
-  // 繰越 = 月初前日までの残高合計 / 月末残高
-  const prevDay = ms.slice(0,8)+'00'; // 前月末より確実に前
-  let carry=0,endbal=0;
+  // 月末残高
+  let endbal=0;
   for(const t of targets){
-    const b1=await calcBalances(t, prevDay);
     const b2=await calcBalances(t, me_);
-    carry += b1.sbi+b1.paypay+b1.cash+b1.other;
-    endbal += b2.sbi+b2.paypay+b2.cash+b2.other;
+    endbal += b2.sbi+b2.paypay+b2.suica+b2.merpay+b2.cash+b2.other;
   }
-  $('#s-carry').textContent=yen(carry);
   $('#s-endbal').textContent=yen(endbal);
 
   // 現在残高
@@ -899,8 +895,7 @@ async function renderSummary(){
     const b=await calcBalances(t,null);
     ACCOUNTS.forEach(a=>{
       const d=document.createElement('div'); d.className='bal';
-      const who = targets.length>1 ? usersMeta[t].name+' ' : '';
-      d.innerHTML=`<div class="name">${who}${a.label}</div><div class="val">${yen(b[a.id])}</div>`;
+      d.innerHTML=`<div class="name">${a.label}</div><div class="val">${yen(b[a.id])}</div>`;
       grid.appendChild(d);
     });
   }
@@ -974,19 +969,17 @@ function downloadWorkbook(rows, filename){
 }
 $('#export-month').onclick=()=>{
   const targets=currentTargets();
-  const withOwner = targets.length>1;
   const [ms,me_]=monthRange(curMonth);
   let txs=[];
   targets.forEach(t=>txCache[t].forEach(tx=>{ if(tx.date>=ms&&tx.date<=me_) txs.push({...tx,owner:t}); }));
   const label=curMonth.getFullYear()+'-'+String(curMonth.getMonth()+1).padStart(2,'0');
-  downloadWorkbook(buildRows(txs, withOwner), `かんたん家計簿_${label}.xlsx`);
+  downloadWorkbook(buildRows(txs, false), `かんたん家計簿_${label}.xlsx`);
 };
 $('#export-all').onclick=()=>{
   const targets=currentTargets();
-  const withOwner = targets.length>1;
   let txs=[];
   targets.forEach(t=>txCache[t].forEach(tx=>txs.push({...tx,owner:t})));
-  downloadWorkbook(buildRows(txs, withOwner), `かんたん家計簿_全期間.xlsx`);
+  downloadWorkbook(buildRows(txs, false), `かんたん家計簿_全期間.xlsx`);
 };
 
 /* ================= ストリーク ================= */
