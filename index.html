@@ -504,7 +504,12 @@ function routeByAuth(){
   const user = auth.currentUser;
   if(user){
     const uid = user.email.split('@')[0];
-    if(usersMeta[uid]){ enterApp(uid); return; }
+    if(usersMeta[uid]){
+      // お試しアカウント(とみお)の追加画面は、保護者(とみぃ)としてログイン済みの時だけ、
+      // URLの末尾に #add-tomio を付けた場合に出す(誰でも開けないようにするため)
+      if(uid==='parent' && location.hash==='#add-tomio' && !usersMeta.t3){ showScreen('#scr-addt3'); return; }
+      enterApp(uid); return;
+    }
   }
   renderLogin(); showScreen('#scr-login');
 }
@@ -527,12 +532,6 @@ async function boot(){
 
   if(!doc.exists){ booted = true; showScreen('#scr-setup'); return; }
   usersMeta = doc.data();
-
-  // お試しアカウント(とみお)を追加する特別な画面。URLの末尾に #add-tomio を付けてアクセスした時だけ、
-  // まだ「とみお」が居なければこの画面を出す。一度作ったら二度と出ない
-  if(location.hash==='#add-tomio' && !usersMeta.t3){
-    booted = true; showScreen('#scr-addt3'); return;
-  }
 
   // 旧データからの移行(失敗・停止しても、最大6秒で必ず打ち切って画面を出す)
   try{
