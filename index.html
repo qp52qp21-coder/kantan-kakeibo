@@ -226,6 +226,24 @@ canvas{max-width:100%}
   </div>
 </div>
 
+<!-- ============ とみおアカウント追加(お試し用・1回だけ) ============ -->
+<div class="screen" id="scr-addt3">
+  <div class="container">
+    <div class="hero">
+      <div class="mark">👛</div>
+      <h1>かんたん家計簿</h1>
+      <p>お試し用のアカウントを作るよ</p>
+    </div>
+    <div class="card">
+      <h3>お試しアカウント</h3>
+      <div class="field"><label>名前</label><input id="addt3-name" value="とみお"></div>
+      <div class="field"><label>暗証番号(4桁)</label><input id="addt3-pin" inputmode="numeric" maxlength="4" placeholder="0000"></div>
+    </div>
+    <button class="btn" id="addt3-save">このアカウントを作る</button>
+    <div class="err" id="addt3-err"></div>
+  </div>
+</div>
+
 <!-- ============ アプリ本体 ============ -->
 <div class="screen" id="scr-app">
   <header class="appbar">
@@ -387,6 +405,12 @@ const ACCOUNTS = [
   {id:'cash',  label:'現金'},
   {id:'other', label:'その他'}
 ];
+// カテゴリーごとの色を固定(月によって表示される項目が変わっても同じ色になるように)
+const CAT_COLORS = {
+  '食費':'#2a78d6', '家賃':'#eb6834', '光熱費':'#1baf7a', '通信費':'#eda100',
+  '交通費':'#e87ba4', '交際費':'#008300', '趣味娯楽費':'#6250d6', '教材費':'#e34948',
+  '予備費':'#898781'
+};
 const VOICE_CAT_WORDS = {
   '食費':['食費','ごはん','ご飯','ランチ','ラーメン','弁当','コンビニ','スーパー','食料'],
   '家賃':['家賃','やちん'],
@@ -405,7 +429,7 @@ let me = null;                 // 't1' | 't2' | 'parent'
 let viewTarget = 't1';         // 親の閲覧対象 't1'|'t2'
 let inputType = 'expense';
 let selCat = null, selMethod = null, selTransferTo = null;
-let txCache = {t1:[], t2:[]};  // 取引キャッシュ
+let txCache = {t1:[], t2:[], t3:[]};  // 取引キャッシュ
 let unsubs = [];
 let curMonth = new Date();     // 集計表示中の月
 let pieChart = null, barChart = null;
@@ -504,6 +528,12 @@ async function boot(){
   if(!doc.exists){ booted = true; showScreen('#scr-setup'); return; }
   usersMeta = doc.data();
 
+  // お試しアカウント(とみお)を追加する特別な画面。URLの末尾に #add-tomio を付けてアクセスした時だけ、
+  // まだ「とみお」が居なければこの画面を出す。一度作ったら二度と出ない
+  if(location.hash==='#add-tomio' && !usersMeta.t3){
+    booted = true; showScreen('#scr-addt3'); return;
+  }
+
   // 旧データからの移行(失敗・停止しても、最大6秒で必ず打ち切って画面を出す)
   try{
     await Promise.race([
@@ -550,15 +580,43 @@ $('#su-save').onclick = async () => {
   renderLogin(); showScreen('#scr-login'); toast('設定できたよ!');
 };
 
+/* ================= お試しアカウント(とみお)追加 ================= */
+$('#addt3-save').onclick = async () => {
+  const name=$('#addt3-name').value.trim();
+  const pin=$('#addt3-pin').value.trim();
+  if(!name){ $('#addt3-err').textContent='名前を入力してね'; return; }
+  if(!/^\d{4}$/.test(pin)){ $('#addt3-err').textContent='暗証番号は4桁の数字で入力してね'; return; }
+  const btn=$('#addt3-save'); btn.disabled=true; btn.textContent='作成中…';
+  try{
+    await auth.createUserWithEmailAndPassword(authEmail('t3'), authPassword(pin));
+    await db.collection('meta').doc('users').set({t3:{name}}, {merge:true});
+    usersMeta.t3={name};
+    await auth.signOut();
+  }catch(e){
+    $('#addt3-err').textContent = e.code==='auth/email-already-in-use' ? 'もう作られているみたい' : '作成に失敗したよ。もう一度試してみてね';
+    btn.disabled=false; btn.textContent='このアカウントを作る';
+    return;
+  }
+  history.replaceState(null,'',location.pathname+location.search); // #add-tomio を消す
+  renderLogin(); showScreen('#scr-login'); toast('作成できたよ!');
+};
+
 /* ================= ログイン ================= */
 let pendingUid = null;
 function renderLogin(){
   const box = $('#login-users'); box.innerHTML='';
-  [['t1','👦'],['t2','👦'],['parent','👨']].forEach(([uid,emo])=>{
+  [['t1','👦'],['t2','👦'],['t3','🧑'],['parent','👨']].forEach(([uid,emo])=>{
+    if(!usersMeta[uid]) return; // まだ作られていないアカウントは出さない
+    const name = usersMeta[uid].name;
     const b=document.createElement('button');
     b.className='user-card';
-    b.innerHTML=`<span class="avatar">${usersMeta[uid].name.slice(0,1)}</span>${usersMeta[uid].name}${uid==='parent'?'<span style="margin-left:auto;font-size:12px;color:var(--ink-soft)">閲覧のみ</span>':''}`;
-    b.onclick=()=>{ pendingUid=uid; $('#pin-for').textContent=usersMeta[uid].name+' の暗証番号'; $('#pin-box').style.display='block'; $('#pin-input').value=''; $('#login-err').textContent=''; $('#pin-input').focus(); };
+    const avatar=document.createElement('span'); avatar.className='avatar'; avatar.textContent=name.slice(0,1);
+    b.append(avatar, document.createTextNode(name));
+    if(uid==='parent'){
+      const tag=document.createElement('span'); tag.style.cssText='margin-left:auto;font-size:12px;color:var(--ink-soft)'; tag.textContent='閲覧のみ';
+      b.appendChild(tag);
+    }
+    b.onclick=()=>{ pendingUid=uid; $('#pin-for').textContent=name+' の暗証番号'; $('#pin-box').style.display='block'; $('#pin-input').value=''; $('#login-err').textContent=''; $('#pin-input').focus(); };
     box.appendChild(b);
   });
 }
@@ -900,14 +958,15 @@ async function renderSummary(){
     });
   }
 
-  // 円グラフ
+  // 円グラフ(カテゴリー別に固定の色をつける)
   const pieLabels=Object.keys(catTotals), pieData=Object.values(catTotals);
+  const pieColors=pieLabels.map(c=>CAT_COLORS[c]||'#C6D9CC');
   if(pieChart) pieChart.destroy();
   pieChart=new Chart($('#chart-pie'),{
     type:'doughnut',
     data:{labels:pieLabels.length?pieLabels:['データなし'],
       datasets:[{data:pieData.length?pieData:[1],
-        backgroundColor:['#3E7059','#4E8A6C','#66A183','#7EB899','#98CCAF','#B4DEC6','#D0EDDC','#8FAF9D','#6E8C7C']}]},
+        backgroundColor:pieLabels.length?pieColors:['#C6D9CC']}]},
     options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
   });
 
