@@ -164,6 +164,15 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 .sum-grid .name{font-size:12px;color:var(--ink-soft)}
 .sum-grid .val{font-size:16px;font-weight:700}
 canvas{max-width:100%}
+.bal .name .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.cat-total{margin-top:10px;font-size:14px;text-align:right;color:var(--ink-soft)}
+.cat-total b{color:var(--ink);font-size:16px}
+.m-row{margin-bottom:12px}
+.m-row:last-child{margin-bottom:0}
+.m-head{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
+.m-head .amt{font-weight:700}
+.m-bar{height:10px;border-radius:5px;background:var(--accent-soft);overflow:hidden}
+.m-bar span{display:block;height:100%;background:var(--accent);border-radius:5px}
 .viewer-seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
 .viewer-seg button{flex:1;padding:8px 0;border-radius:9px;font-size:14px;font-weight:600;color:var(--ink-soft)}
 .viewer-seg button.on{background:var(--accent);color:#fff}
@@ -321,6 +330,8 @@ canvas{max-width:100%}
         <div class="bal-grid" id="bal-grid"></div>
       </div>
       <div class="card"><h3>カテゴリー別支出</h3><canvas id="chart-pie"></canvas></div>
+      <div class="card"><h3>カテゴリーべつの金額</h3><div class="bal-grid" id="cat-list"></div><div class="cat-total" id="cat-total"></div></div>
+      <div class="card"><h3>支払い方法べつの支出</h3><div id="method-list"></div></div>
       <div class="card"><h3>月ごとの推移(6か月)</h3><canvas id="chart-bar"></canvas></div>
       <div class="card">
         <h3>データの出力</h3>
@@ -919,20 +930,58 @@ function monthRange(d){
   const e=y+'-'+String(m+1).padStart(2,'0')+'-31';
   return [s,e];
 }
+function renderCatList(totals, total){
+  const grid=$('#cat-list'); grid.innerHTML='';
+  const rows=Object.entries(totals).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  if(!rows.length){ const e=document.createElement('div'); e.className='empty'; e.style.gridColumn='1 / -1'; e.textContent='この月の支出はまだないよ'; grid.appendChild(e); $('#cat-total').textContent=''; return; }
+  rows.forEach(([cat,amount])=>{
+    const d=document.createElement('div'); d.className='bal';
+    const name=document.createElement('div'); name.className='name';
+    const dot=document.createElement('span'); dot.className='dot'; dot.style.background=CAT_COLORS[cat]||'#C6D9CC';
+    name.append(dot, document.createTextNode(cat));
+    const val=document.createElement('div'); val.className='val'; val.textContent=yen(amount);
+    d.append(name, val);
+    grid.appendChild(d);
+  });
+  const t=$('#cat-total'); t.textContent='今月の支出ごうけい '; const b=document.createElement('b'); b.textContent=yen(total); t.appendChild(b);
+}
+function renderMethodList(totals, total){
+  const box=$('#method-list'); box.innerHTML='';
+  const rows=METHODS.map(m=>({label:m.label, amount:totals[m.id]||0})).filter(r=>r.amount>0).sort((a,b)=>b.amount-a.amount);
+  if(!rows.length){ const e=document.createElement('div'); e.className='empty'; e.textContent='この月の支出はまだないよ'; box.appendChild(e); return; }
+  rows.forEach(r=>{
+    const row=document.createElement('div'); row.className='m-row';
+    const head=document.createElement('div'); head.className='m-head';
+    const name=document.createElement('span'); name.textContent=r.label;
+    const amt=document.createElement('span'); amt.className='amt'; amt.textContent=yen(r.amount)+'('+Math.round(r.amount/total*100)+'%)';
+    head.append(name, amt);
+    const bar=document.createElement('div'); bar.className='m-bar';
+    const fill=document.createElement('span'); fill.style.width=(r.amount/total*100)+'%';
+    bar.appendChild(fill);
+    row.append(head, bar);
+    box.appendChild(row);
+  });
+}
 async function renderSummary(){
   const targets=currentTargets();
   $('#m-label').textContent=curMonth.getFullYear()+'年'+(curMonth.getMonth()+1)+'月';
   const [ms,me_]=monthRange(curMonth);
 
-  let income=0,expense=0,catTotals={},days=new Set();
+  let income=0,expense=0,catTotals={},methodTotals={},days=new Set();
   let txs=[];
   targets.forEach(t=>txs.push(...txCache[t]));
   txs.forEach(tx=>{
     if(tx.date<ms||tx.date>me_) return;
     if(tx.type==='income') income+=tx.amount;
-    if(tx.type==='expense'){ expense+=tx.amount; catTotals[tx.category]=(catTotals[tx.category]||0)+tx.amount; }
+    if(tx.type==='expense'){
+      expense+=tx.amount;
+      catTotals[tx.category]=(catTotals[tx.category]||0)+tx.amount;
+      methodTotals[tx.method]=(methodTotals[tx.method]||0)+tx.amount;
+    }
     days.add(tx.date);
   });
+  renderCatList(catTotals, expense);
+  renderMethodList(methodTotals, expense);
   $('#s-income').textContent=yen(income);
   $('#s-expense').textContent=yen(expense);
   $('#s-days').textContent=days.size+'日';

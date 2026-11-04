@@ -28,6 +28,17 @@ icon-192.png          アイコン（192px / purpose: "any maskable"）
 icon-512.png          アイコン（512px / purpose: "any maskable"）
 ```
 
+## 使っているサービス一覧
+
+このアプリで外部サービスを使っているのは、この2つだけ（Cloudflareは使っていない）。
+
+| サービス | 何に使っているか | 具体的な場所 |
+|---|---|---|
+| **GitHub** | コードの保存場所。公開サイトのホスティングも兼ねる（GitHub Pages） | リポジトリ: https://github.com/qp52qp21-coder/kantan-kakeibo<br>公開URL: https://qp52qp21-coder.github.io/kantan-kakeibo/ |
+| **Firebase**（family-kakeibo） | ログイン機能（Authentication）と、お金の記録データの保存（Cloud Firestore） | プロジェクトID: `family-kakeibo-a23af`（詳細は次の「Firebase側の設定」） |
+
+それ以外（Cloudflare、他のクラウド、サーバーなど）は一切使っていない。管理すべき場所はこの2つのログイン情報（GitHub・Firebase）だけ。
+
 ## 公開先
 
 - リポジトリ: https://github.com/qp52qp21-coder/kantan-kakeibo
@@ -163,6 +174,8 @@ const ACCOUNTS = [sbi:'SBIネット銀行', paypay, suica, merpay, cash, other];
 6. **集計** — 月送り、今月の収支／月末残高、収入・支出・記録日数、
    いまの残高（口座別）、カテゴリー別の円グラフ、6か月の棒グラフ
    （前月からの繰越表示は廃止。双子が毎月1日に残高を固定額へ移すため不要になった）
+   - 「カテゴリーべつの金額」カード: 「いまの残高」と同じマス目の見た目で、その月のカテゴリーごとの支出額を金額の多い順に並べる（`renderCatList`。0円の項目は出さない。円グラフと同じ`CAT_COLORS`の色マーク付き。最下部に今月の支出ごうけい）
+   - 「支払い方法べつの支出」カード: その月の支出を支払い方法ごとに合計し、金額の多い順に金額・割合・横棒で表示（`renderMethodList`。収入・振替は含めない。月送り・保護者の1人目/2人目切り替えに連動）
    - 円グラフの色はカテゴリーごとに `CAT_COLORS` で固定（月によって表示される項目が変わっても同じ色になる）。
      色はdataviz skillの標準パレット（色覚多様性への配慮を含めて検証済み）を使用。9番目の「予備費」だけは
      グレー（まとめ役）にしている
@@ -183,7 +196,7 @@ const ACCOUNTS = [sbi:'SBIネット銀行', paypay, suica, merpay, cash, other];
 - **文言は小学生〜中高生にも分かる、やさしい日本語**（「〜だよ」「〜してね」調）。
   記録するたびにランダムで褒め言葉を出す（`praise()`）
 - **保護者は絶対に書き込めない**。UIで隠すだけでなく、Firestoreルールでも禁止する（二重で守る）
-- **`sw.js` のキャッシュ名 `CACHE` はリリースのたびに必ず上げる**（現在 `kakeibo-v19`）。
+- **`sw.js` のキャッシュ名 `CACHE` はリリースのたびに必ず上げる**（現在 `kakeibo-v20`）。
   上げ忘れると古いファイルが表示され続ける
 - Service Workerは**ページ本体はネット優先**（更新をすぐ反映）、画像などはキャッシュ優先。
   Firebase・CDNへの通信はキャッシュしない
