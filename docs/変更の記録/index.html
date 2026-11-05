@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>かんたん家計簿のあゆみ</title>
+<style>
+/* 配色はアプリと同じミント系 */
+:root{
+  --bg:#F0F6F1; --card:#FFFFFF; --line:#DCEBE0; --accent:#4E8A6C; --accent-soft:#E2F0E8;
+  --ink:#374440; --soft:#7F8F86; --new:#B4531A; --new-soft:#FBE9DC;
+  --f:"Noto Sans JP","Yu Gothic UI","Hiragino Sans",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.7}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 64px;display:flex;flex-direction:column;gap:36px}
+h1{font-size:26px;margin:0;line-height:1.35}
+h2{font-size:20px;margin:0 0 4px}
+h3{font-size:17px;margin:0}
+p{margin:0}
+.lead{color:var(--soft);max-width:62ch;margin-top:8px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--accent);font-weight:700}
+.sub{color:var(--soft);font-size:14px}
+
+/* 目次(年表) */
+.toc{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.toc a{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 12px;text-decoration:none;color:var(--ink);font-size:13px;line-height:1.4}
+.toc a b{font-size:14px}
+.toc a:hover,.toc a:focus-visible{border-color:var(--accent);outline:none}
+
+/* くらべる */
+.compare{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:end}
+.controls label{display:flex;flex-direction:column;font-size:12px;color:var(--soft);gap:3px}
+select{font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+.seg{display:flex;background:var(--accent-soft);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{border:0;background:transparent;border-radius:999px;font:inherit;font-size:13px;padding:5px 12px;color:var(--ink);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:700}
+.seg button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pair figure{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.pair figcaption{font-size:13px;font-weight:700;text-align:center}
+.pair img{width:100%;max-width:340px;margin:0 auto;display:block;border-radius:14px;border:1px solid var(--line);cursor:zoom-in}
+
+/* 版ごとのカード */
+.timeline{display:flex;flex-direction:column;gap:20px}
+.ver{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;scroll-margin-top:12px}
+.ver-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+.badge{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 10px;background:var(--accent-soft);color:var(--accent)}
+.badge.now{background:var(--accent);color:#fff}
+.date{color:var(--soft);font-size:13px}
+.ver ul{margin:0;padding-left:1.2em}
+.ver li{margin-bottom:2px}
+.shots{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+.shots figure{margin:0;flex:0 0 160px;display:flex;flex-direction:column;gap:4px}
+.shots img{width:160px;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block}
+.shots figcaption{font-size:12px;color:var(--soft);text-align:center}
+
+/* 拡大表示 */
+.lightbox{position:fixed;inset:0;background:rgba(30,40,35,.82);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.lightbox[hidden]{display:none}
+.lightbox img{max-height:92vh;max-width:100%;border-radius:12px}
+.lightbox button{position:absolute;top:12px;right:16px;background:#fff;border:0;border-radius:999px;width:40px;height:40px;font-size:20px;cursor:pointer}
+
+.how{background:var(--card);border:1px dashed var(--line);border-radius:16px;padding:16px 18px}
+.how ol{margin:6px 0 0;padding-left:1.3em}
+code{background:var(--accent-soft);border-radius:6px;padding:0 5px;font-size:13px}
+@media (max-width:560px){.pair{grid-template-columns:1fr 1fr;gap:8px} h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">かんたん家計簿 / 変更の記録</div>
+  <h1>作った日から、いままでのあゆみ</h1>
+  <p class="lead">アプリの画面が、版ごとにどう変わってきたかの記録です。どの版にも同じサンプルの金額を入れて撮っているので、見た目のちがいだけをくらべられます(お子さんの本当の記録ではありません)。</p>
+  <nav class="toc" id="toc" aria-label="版の一覧"></nav>
+</header>
+
+<section>
+  <h2>2つの版をくらべる</h2>
+  <p class="sub">左と右で版を選び、見たい画面を選んでください。画像を押すと大きく表示します。</p>
+  <div class="compare">
+    <div class="controls">
+      <label>左(前)<select id="cmp-a"></select></label>
+      <label>右(後)<select id="cmp-b"></select></label>
+      <div class="seg" id="cmp-screen" role="group" aria-label="画面の種類"></div>
+    </div>
+    <div class="pair">
+      <figure><img id="cmp-img-a" alt=""><figcaption id="cmp-cap-a"></figcaption></figure>
+      <figure><img id="cmp-img-b" alt=""><figcaption id="cmp-cap-b"></figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>版ごとの変更点</h2>
+  <p class="sub">新しい版が上です。画像は横にスクロールできます。</p>
+  <div class="timeline" id="timeline" style="margin-top:12px"></div>
+</section>
+
+<section class="how">
+  <h3>新しい版を記録するには</h3>
+  <ol>
+    <li>版を上げて公開したら、Claudeに「変更の記録に今の版を追加して」と頼む</li>
+    <li>Claudeがサンプルの金額(<code>scripts/capture-demo.js</code>)を入れて4枚の画面を撮り、<code>img/</code> に保存する</li>
+    <li>このファイルの <code>VERSIONS</code> の先頭に、版・日付・変更点を1件足す</li>
+  </ol>
+</section>
+
+</div>
+
+<div class="lightbox" id="lightbox" hidden>
+  <button type="button" id="lb-close" aria-label="閉じる">×</button>
+  <img id="lb-img" alt="">
+</div>
+
+<script>
+/* ===== 記録のデータ =====
+   新しい版は配列の先頭に足す。key は画像の名前(img/<key>-input.jpg など)に合わせる */
+const VERSIONS = [
+  { key:'v120', ver:'1.2.0', date:'2026-11-07', title:'履歴を月ごとに、数字を大きく',
+    changes:[
+      '履歴タブを月ごとに表示(‹ › で月を選ぶ)。上にその月の記録件数・収入・支出',
+      '入力タブの帯を「いま使えるお金」が主役の2段にし、40pxの大きな数字に',
+      'ほかのページの数字も大きく・太く(20〜50代が一目で読める大きさ)',
+    ]},
+  { key:'v110', ver:'1.1.0', date:'2026-11-06', title:'「問い」の順に画面を整理',
+    changes:[
+      'UX5段階モデルに合わせて、集計を「いくら残ってる?/どこに使った?/前の月とくらべて?/いまの残高」の順に',
+      'カテゴリーべつ・支払い方法べつを、切り替えボタン付きの1枚に。円グラフはカテゴリーのときだけ',
+      '入力タブの上に「いま使えるお金/今月つかった/今週の記録」の帯',
+      'ほめ言葉に「今週は◯日も記録できたね!」。設定タブに版の表示',
+    ]},
+  { key:'v100', ver:'1.0.0', date:'2026-11-04', title:'内訳がひと目で分かるように',
+    changes:[
+      '集計に「カテゴリーべつの金額」「支払い方法べつの支出」カードを追加',
+      '円グラフの色をカテゴリーごとに固定(色の見分けやすさも確認した色)',
+      'お試し用アカウント「とみお」を追加できるように',
+    ]},
+  { key:'a1019', ver:'', date:'2026-10-19', title:'繰越と二人合計をやめる',
+    changes:[
+      '集計の「前月からの繰越」をやめ、「今月のうごき」(今月の収支・月末残高)に',
+      '保護者の「二人合計」表示をやめ、1人目/2人目の切り替えだけに',
+      '月末残高にSuica・メルペイが入っていなかった不具合を直した',
+    ]},
+  { key:'a0716', ver:'', date:'2026-07-16', title:'「かんたん家計簿」に名前を変更',
+    changes:[
+      '名前を「ふたご家計簿」から「かんたん家計簿」に',
+      '色をお子さんが選んだミント色に',
+      '支払い方法にSuica・メルペイを追加。金額の入力欄を大きく',
+      'ログインを、暗証番号をそのまま保存しない安全なしくみ(Firebaseのログイン機能)に変更',
+    ]},
+  { key:'a0714', ver:'', date:'2026-07-14', title:'はじめての公開(ふたご家計簿)',
+    changes:[
+      '支出・収入・振替の記録、履歴、集計(繰越・まとめ・残高・円グラフ・6か月の推移)',
+      '支払い方法はSBIデビット・PayPay・現金・その他の4つ',
+      '連続記録日数(🔥)の表示、Excelへの出力',
+    ]},
+];
+const SCREENS = [
+  { id:'input',    label:'入力' },
+  { id:'history',  label:'履歴' },
+  { id:'summary',  label:'集計(上)' },
+  { id:'summary2', label:'集計(下)' },
+];
+const img = (v,s) => 'img/'+v.key+'-'+s+'.jpg';
+const name = v => (v.ver ? v.ver : '版番号なし') + '(' + v.date + ')';
+
+/* ===== 目次 ===== */
+const toc = document.getElementById('toc');
+[...VERSIONS].reverse().forEach(v=>{
+  const a=document.createElement('a'); a.href='#'+v.key;
+  const b=document.createElement('b'); b.textContent=v.ver||v.date.slice(5).replace('-','/');
+  const s=document.createElement('span'); s.textContent=v.title;
+  a.append(b,s); toc.appendChild(a);
+});
+
+/* ===== 版ごとのカード ===== */
+const tl = document.getElementById('timeline');
+VERSIONS.forEach((v,i)=>{
+  const sec=document.createElement('article'); sec.className='ver'; sec.id=v.key;
+  const head=document.createElement('div'); head.className='ver-head';
+  const badge=document.createElement('span'); badge.className='badge'+(i===0?' now':''); badge.textContent=(v.ver||'版番号なし')+(i===0?' いまの版':'');
+  const h=document.createElement('h3'); h.textContent=v.title;
+  const d=document.createElement('span'); d.className='date'; d.textContent=v.date.replace(/-/g,'/');
+  head.append(badge,h,d);
+  const ul=document.createElement('ul');
+  v.changes.forEach(c=>{ const li=document.createElement('li'); li.textContent=c; ul.appendChild(li); });
+  const shots=document.createElement('div'); shots.className='shots';
+  SCREENS.forEach(s=>{
+    const f=document.createElement('figure');
+    const im=document.createElement('img'); im.src=img(v,s.id); im.alt=name(v)+' '+s.label+'の画面'; im.loading='lazy';
+    im.onclick=()=>openLb(im.src, im.alt);
+    const cap=document.createElement('figcaption'); cap.textContent=s.label;
+    f.append(im,cap); shots.appendChild(f);
+  });
+  sec.append(head,ul,shots); tl.appendChild(sec);
+});
+
+/* ===== くらべる ===== */
+const selA=document.getElementById('cmp-a'), selB=document.getElementById('cmp-b'), seg=document.getElementById('cmp-screen');
+VERSIONS.forEach(v=>{ [selA,selB].forEach(sel=>{ const o=document.createElement('option'); o.value=v.key; o.textContent=name(v)+' '+v.title; sel.appendChild(o); }); });
+selA.value=VERSIONS[VERSIONS.length-1].key;   // 左: 作った当時
+selB.value=VERSIONS[0].key;                   // 右: いまの版
+let screen='input';
+SCREENS.forEach(s=>{
+  const b=document.createElement('button'); b.type='button'; b.textContent=s.label; b.dataset.id=s.id;
+  b.onclick=()=>{ screen=s.id; drawCompare(); };
+  seg.appendChild(b);
+});
+function drawCompare(){
+  seg.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.id===screen?'true':'false'));
+  [['a',selA],['b',selB]].forEach(([k,sel])=>{
+    const v=VERSIONS.find(x=>x.key===sel.value);
+    const im=document.getElementById('cmp-img-'+k);
+    im.src=img(v,screen); im.alt=name(v)+'の画面';
+    im.onclick=()=>openLb(im.src, im.alt);
+    document.getElementById('cmp-cap-'+k).textContent=name(v);
+  });
+}
+selA.onchange=selB.onchange=drawCompare;
+drawCompare();
+
+/* ===== 拡大表示 ===== */
+const lb=document.getElementById('lightbox'), lbImg=document.getElementById('lb-img');
+function openLb(src,alt){ lbImg.src=src; lbImg.alt=alt; lb.hidden=false; document.getElementById('lb-close').focus(); }
+function closeLb(){ lb.hidden=true; }
+document.getElementById('lb-close').onclick=closeLb;
+lb.onclick=e=>{ if(e.target===lb) closeLb(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(); });
+</script>
+</body>
+</html>

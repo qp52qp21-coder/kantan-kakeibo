@@ -29,6 +29,8 @@ icon-512.png          アイコン（512px / purpose: "any maskable"）
 docs/更新履歴.md       版ごとの変更点（版の付け方もここ）
 docs/作業記録.md       作業の記録
 scripts/check-version.js  版の食い違いチェック（node で実行。アプリ本体には不要）
+docs/変更の記録/index.html  版ごとの画面キャプチャ付きの記録（くらべる機能つき）。画像は docs/変更の記録/img/
+scripts/capture-demo.js    キャプチャ用のサンプルデータ（どの版にも同じ金額を入れて撮るため）
 ```
 
 ## 使っているサービス一覧
@@ -210,6 +212,11 @@ const ACCOUNTS = [sbi:'SBIネット銀行', paypay, suica, merpay, cash, other];
   `index.html` の `APP_VERSION`、`sw.js` の `VERSION`（キャッシュ名 `kakeibo-1.2.0` になる）、`docs/更新履歴.md`。
   `node scripts/check-version.js` で食い違いを確認できる。公開後は Git に `v1.1.0` のようなタグを付ける。
   上げ忘れると古いファイルが表示され続ける。いまの版は設定タブ「アプリについて」に表示される
+- **版を公開したら `docs/変更の記録/` にキャプチャを足す**（入力・履歴・集計(上)・集計(下)の4枚）。
+  撮り方: その版をローカルで開き、ブラウザ画面を 375×812 にして `scripts/capture-demo.js` を実行
+  （`eval(await (await fetch('…/capture-demo.js')).text())`）→ `switchPage('input'|'history'|'summary')` で切り替えて撮影。
+  画像名は `img/<key>-input.jpg` など。`index.html` の `VERSIONS` の先頭に1件足す。
+  本番の実データ（お子さんの記録）は絶対に撮らない。サンプルデータだけで撮る
 - Service Workerは**ページ本体はネット優先**（更新をすぐ反映）、画像などはキャッシュ優先。
   Firebase・CDNへの通信はキャッシュしない
 - **Androidのホーム画面用に `purpose:"maskable"` を必ず指定する**（`"any maskable"` で兼用）
