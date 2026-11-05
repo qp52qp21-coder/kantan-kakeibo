@@ -139,8 +139,8 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 /* ---- 残高 ---- */
 .bal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .bal{background:var(--bg);border-radius:12px;padding:10px 12px}
-.bal .name{font-size:12px;color:var(--ink-soft)}
-.bal .val{font-size:18px;font-weight:700}
+.bal .name{font-size:13px;color:var(--ink-soft)}
+.bal .val{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
 
 /* ---- 履歴 ---- */
 .day-head{font-size:13px;color:var(--ink-soft);font-weight:600;margin:16px 4px 6px}
@@ -150,10 +150,17 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 }
 .tx .cat{font-weight:600;font-size:15px}
 .tx .sub{font-size:12px;color:var(--ink-soft)}
-.tx .amt{margin-left:auto;font-weight:700;font-size:16px;white-space:nowrap}
+.tx .amt{margin-left:auto;font-weight:800;font-size:19px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .tx .amt.in{color:var(--accent)}
 .tx .del{color:var(--ink-soft);font-size:18px;padding:4px}
 .empty{color:var(--ink-soft);text-align:center;padding:32px 0;font-size:14px}
+.hist-sum{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 8px;margin-bottom:6px;
+  font-variant-numeric:tabular-nums;
+}
+.hist-sum small{display:block;font-size:13px;color:var(--ink-soft)}
+.hist-sum b{font-size:20px;font-weight:800}
 
 /* ---- 集計 ---- */
 .month-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -161,24 +168,31 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 .month-nav button{font-size:22px;color:var(--accent);padding:4px 14px}
 .sum-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center}
 .sum-grid.cols-2{grid-template-columns:1fr 1fr}
-.sum-grid .name{font-size:12px;color:var(--ink-soft)}
-.sum-grid .val{font-size:16px;font-weight:700}
+.sum-grid{font-variant-numeric:tabular-nums}
+.sum-grid .name{font-size:13px;color:var(--ink-soft)}
+.sum-grid .val{font-size:20px;font-weight:800}
+.sum-grid.cols-2 .val{font-size:28px}
 canvas{max-width:100%}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
 .sum-sub{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 #bd-pie{max-width:180px;margin:4px auto 14px}
+/* 入力タブ上の帯: 一目(0.2秒)で読めるよう、残高を主役に大きく */
 .now-strip{
-  display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px;text-align:center;
-  background:var(--accent);color:#fff;border-radius:14px;padding:12px 8px;margin-bottom:14px;
+  background:var(--accent);color:#fff;border-radius:16px;padding:14px 16px;margin-bottom:14px;
+  text-align:center;font-variant-numeric:tabular-nums;
 }
-.now-strip small{display:block;font-size:11px;opacity:.9}
-.now-strip b{font-size:17px}
+.now-strip small{display:block;font-size:14px;font-weight:600;line-height:1.3}
+.now-strip b{display:block;font-weight:800;line-height:1.15;letter-spacing:.01em}
+.ns-main b{font-size:40px;margin-top:2px}
+.ns-sub{display:grid;grid-template-columns:1fr 1fr;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.35)}
+.ns-sub > div + div{border-left:1px solid rgba(255,255,255,.35)}
+.ns-sub b{font-size:26px;margin-top:2px}
 .cat-total{margin-top:10px;font-size:14px;text-align:right;color:var(--ink-soft)}
-.cat-total b{color:var(--ink);font-size:16px}
+.cat-total b{color:var(--ink);font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
 .m-row{margin-bottom:12px}
 .m-row:last-child{margin-bottom:0}
-.m-head{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
-.m-head .amt{font-weight:700}
+.m-head{display:flex;justify-content:space-between;align-items:baseline;font-size:15px;margin-bottom:4px}
+.m-head .amt{font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}
 .m-bar{height:10px;border-radius:5px;background:var(--accent-soft);overflow:hidden}
 .m-bar span{display:block;height:100%;background:var(--accent);border-radius:5px}
 .viewer-seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
@@ -275,9 +289,11 @@ canvas{max-width:100%}
     <!-- 入力ページ -->
     <section class="page" id="page-input">
       <div class="now-strip" id="now-strip" style="display:none">
-        <div><small>いま使えるお金</small><b id="ns-bal">-</b></div>
-        <div><small>今月つかった</small><b id="ns-spent">-</b></div>
-        <div><small>今週の記録</small><b id="ns-week">-</b></div>
+        <div class="ns-main"><small>いま使えるお金</small><b id="ns-bal">-</b></div>
+        <div class="ns-sub">
+          <div><small>今月つかった</small><b id="ns-spent">-</b></div>
+          <div><small>今週の記録</small><b id="ns-week">-</b></div>
+        </div>
       </div>
       <div class="streak" id="streak-box" style="display:none"></div>
       <div class="type-seg" id="type-seg">
@@ -312,6 +328,12 @@ canvas{max-width:100%}
     <!-- 履歴ページ -->
     <section class="page" id="page-history">
       <div class="viewer-seg" id="hist-viewer" style="display:none"></div>
+      <div class="month-nav">
+        <button id="h-prev" aria-label="前の月">‹</button>
+        <h3 id="h-label"></h3>
+        <button id="h-next" aria-label="次の月">›</button>
+      </div>
+      <div class="hist-sum" id="h-sum"></div>
       <div id="hist-list"></div>
     </section>
 
@@ -404,7 +426,7 @@ canvas{max-width:100%}
 /* ================= バージョン =================
    リリースのたびに上げる。sw.js の VERSION と必ず同じにする(docs/更新履歴.md にも書く)
    形式: 大きな変更.機能追加.小さな修正 */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -915,15 +937,34 @@ function renderViewerSeg(){
     });
   });
 }
+// 履歴は月ごとに表示する(‹ › で月を選ぶ)
+let histMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 function renderHistory(){
   const box=$('#hist-list'); box.innerHTML='';
+  $('#h-label').textContent=histMonth.getFullYear()+'年'+(histMonth.getMonth()+1)+'月';
+  const [ms,me_]=monthRange(histMonth);
   const targets=currentTargets();
   let txs=[];
-  targets.forEach(t=>txCache[t].forEach(tx=>txs.push({...tx,owner:t})));
+  targets.forEach(t=>txCache[t].forEach(tx=>{ if(tx.date>=ms&&tx.date<=me_) txs.push({...tx,owner:t}); }));
   txs.sort((a,b)=>b.date.localeCompare(a.date)||((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)));
-  if(!txs.length){ box.innerHTML='<div class="empty">まだ記録がないよ。最初の1件を記録してみよう!</div>'; return; }
+  // その月の件数と収入・支出
+  const inc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  const exp=txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+  const sum=$('#h-sum'); sum.textContent='';
+  if(txs.length){
+    [['記録',txs.length+'件'],['収入',yen(inc)],['支出',yen(exp)]].forEach(([k,v])=>{
+      const d=document.createElement('div'); const s=document.createElement('small'); s.textContent=k;
+      const b=document.createElement('b'); b.textContent=v; d.append(s,b); sum.appendChild(d);
+    });
+  }
+  sum.style.display=txs.length?'grid':'none';
+  if(!txs.length){
+    const e=document.createElement('div'); e.className='empty';
+    e.textContent = Object.values(txCache).some(a=>a.length) ? 'この月の記録はないよ' : 'まだ記録がないよ。最初の1件を記録してみよう!';
+    box.appendChild(e); return;
+  }
   let lastDate='';
-  txs.slice(0,200).forEach(tx=>{
+  txs.forEach(tx=>{
     if(tx.date!==lastDate){
       lastDate=tx.date;
       const h=document.createElement('div'); h.className='day-head'; h.textContent=tx.date.replace(/-/g,'/');
@@ -934,13 +975,14 @@ function renderHistory(){
       ? 'SBI → '+(ACCOUNTS.find(a=>a.id===tx.to)?.label||'')
       : (ACCOUNTS.find(a=>a.id===tx.method)?.label||'');
     const cat = tx.type==='transfer'?'振替':tx.category;
-    el.innerHTML=`
-      <div>
-        <div class="cat">${cat}</div>
-        <div class="sub">${methodLabel}${tx.memo?' ・ '+tx.memo:''}</div>
-      </div>
-      <div class="amt ${tx.type==='income'?'in':''}">${tx.type==='income'?'+':tx.type==='expense'?'-':''}${yen(tx.amount).replace('¥','¥')}</div>
-    `;
+    // メモは自由入力なので textContent で入れる(HTMLとして解釈させない)
+    const left=document.createElement('div');
+    const c=document.createElement('div'); c.className='cat'; c.textContent=cat;
+    const sub=document.createElement('div'); sub.className='sub'; sub.textContent=methodLabel+(tx.memo?' ・ '+tx.memo:'');
+    left.append(c, sub);
+    const amt=document.createElement('div'); amt.className='amt'+(tx.type==='income'?' in':'');
+    amt.textContent=(tx.type==='income'?'+':tx.type==='expense'?'-':'')+yen(tx.amount);
+    el.append(left, amt);
     if(me!=='parent'){
       const del=document.createElement('button'); del.className='del'; del.textContent='×';
       del.onclick=async()=>{
@@ -1087,10 +1129,12 @@ async function renderSummary(){
       {label:'収入',data:inData,backgroundColor:'#4E8A6C'},
       {label:'支出',data:exData,backgroundColor:'#C6D9CC'}
     ]},
-    options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
-      scales:{y:{ticks:{font:{size:10}}},x:{ticks:{font:{size:11}}}}}
+    options:{plugins:{legend:{position:'bottom',labels:{boxWidth:14,font:{size:13}}}},
+      scales:{y:{ticks:{font:{size:12}}},x:{ticks:{font:{size:13}}}}}
   });
 }
+$('#h-prev').onclick=()=>{ histMonth=new Date(histMonth.getFullYear(),histMonth.getMonth()-1,1); renderHistory(); };
+$('#h-next').onclick=()=>{ histMonth=new Date(histMonth.getFullYear(),histMonth.getMonth()+1,1); renderHistory(); };
 $('#m-prev').onclick=()=>{ curMonth=new Date(curMonth.getFullYear(),curMonth.getMonth()-1,1); renderSummary(); };
 $('#m-next').onclick=()=>{ curMonth=new Date(curMonth.getFullYear(),curMonth.getMonth()+1,1); renderSummary(); };
 
@@ -1183,7 +1227,7 @@ async function renderNowStrip(){
   $('#ns-bal').textContent=yen(bal);
   $('#ns-spent').textContent=yen(spent);
   $('#ns-week').textContent=weekRecordDays()+'日';
-  box.style.display='grid';
+  box.style.display='block';
 }
 
 /* ================= バージョン ================= */
