@@ -164,7 +164,15 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 .sum-grid .name{font-size:12px;color:var(--ink-soft)}
 .sum-grid .val{font-size:16px;font-weight:700}
 canvas{max-width:100%}
-.bal .name .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.sum-sub{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+#bd-pie{max-width:180px;margin:4px auto 14px}
+.now-strip{
+  display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px;text-align:center;
+  background:var(--accent);color:#fff;border-radius:14px;padding:12px 8px;margin-bottom:14px;
+}
+.now-strip small{display:block;font-size:11px;opacity:.9}
+.now-strip b{font-size:17px}
 .cat-total{margin-top:10px;font-size:14px;text-align:right;color:var(--ink-soft)}
 .cat-total b{color:var(--ink);font-size:16px}
 .m-row{margin-bottom:12px}
@@ -266,6 +274,11 @@ canvas{max-width:100%}
 
     <!-- 入力ページ -->
     <section class="page" id="page-input">
+      <div class="now-strip" id="now-strip" style="display:none">
+        <div><small>いま使えるお金</small><b id="ns-bal">-</b></div>
+        <div><small>今月つかった</small><b id="ns-spent">-</b></div>
+        <div><small>今週の記録</small><b id="ns-week">-</b></div>
+      </div>
       <div class="streak" id="streak-box" style="display:none"></div>
       <div class="type-seg" id="type-seg">
         <button data-type="expense" class="on">支出</button>
@@ -310,29 +323,34 @@ canvas{max-width:100%}
         <h3 id="m-label"></h3>
         <button id="m-next">›</button>
       </div>
+      <!-- 問い1: いくら残ってる? -->
       <div class="card">
-        <h3>今月のうごき</h3>
+        <h3>いくら残ってる?</h3>
         <div class="sum-grid cols-2">
-          <div><div class="name">今月の収支</div><div class="val" id="s-net">-</div></div>
           <div><div class="name">月末残高</div><div class="val" id="s-endbal">-</div></div>
+          <div><div class="name">今月の収支</div><div class="val" id="s-net">-</div></div>
         </div>
-      </div>
-      <div class="card">
-        <h3>今月のまとめ</h3>
-        <div class="sum-grid">
+        <div class="sum-grid sum-sub">
           <div><div class="name">収入</div><div class="val" id="s-income">-</div></div>
           <div><div class="name">支出</div><div class="val" id="s-expense">-</div></div>
           <div><div class="name">記録日数</div><div class="val" id="s-days">-</div></div>
         </div>
       </div>
+      <!-- 問い2: どこに使った?(分け方を切り替える。円グラフはカテゴリーのときだけ) -->
+      <div class="card">
+        <h3>どこに使った?</h3>
+        <div class="viewer-seg" id="bd-seg"></div>
+        <div id="bd-pie"><canvas id="chart-pie"></canvas></div>
+        <div id="bd-list"></div>
+        <div class="cat-total" id="bd-total"></div>
+      </div>
+      <!-- 問い3: 前の月とくらべて? -->
+      <div class="card"><h3>前の月とくらべて?(6か月)</h3><canvas id="chart-bar"></canvas></div>
+      <!-- いまの残高(口座ごと) -->
       <div class="card" id="bal-card">
         <h3>いまの残高</h3>
         <div class="bal-grid" id="bal-grid"></div>
       </div>
-      <div class="card"><h3>カテゴリー別支出</h3><canvas id="chart-pie"></canvas></div>
-      <div class="card"><h3>カテゴリーべつの金額</h3><div class="bal-grid" id="cat-list"></div><div class="cat-total" id="cat-total"></div></div>
-      <div class="card"><h3>支払い方法べつの支出</h3><div id="method-list"></div></div>
-      <div class="card"><h3>月ごとの推移(6か月)</h3><canvas id="chart-bar"></canvas></div>
       <div class="card">
         <h3>データの出力</h3>
         <button class="btn" id="export-month">📄 この月をExcelに出力</button>
@@ -360,6 +378,12 @@ canvas{max-width:100%}
           ※アプリをホーム画面に追加して、通知を許可してね。アプリを開いた時に、その日まだ記録していなければお知らせするよ。
         </p>
       </div>
+      <div class="card">
+        <h3>アプリについて</h3>
+        <p style="font-size:14px">バージョン <b id="app-version">-</b></p>
+        <button class="btn ghost" id="btn-update" style="margin-top:8px;background:var(--bg);color:var(--ink);font-weight:600">🔄 新しい版があるか確認する</button>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:8px">画面がおかしい時や、アップデートがあると聞いた時に押してね。</p>
+      </div>
     </section>
 
   </main>
@@ -377,6 +401,11 @@ canvas{max-width:100%}
 <div id="toast"></div>
 
 <script>
+/* ================= バージョン =================
+   リリースのたびに上げる。sw.js の VERSION と必ず同じにする(docs/更新履歴.md にも書く)
+   形式: 大きな変更.機能追加.小さな修正 */
+const APP_VERSION = '1.1.0';
+
 /* ================= Firebase ================= */
 const firebaseConfig = {
   apiKey: "AIzaSyB3pIHA610hebs5_ALecSkZMnO7gdiAMZg",
@@ -743,9 +772,14 @@ $('#in-save').onclick = async ()=>{
   data.createdAt=firebase.firestore.FieldValue.serverTimestamp();
   await db.collection('users').doc(me).collection('tx').add(data);
   $('#in-amount').value=''; $('#in-memo').value='';
-  toast('記録したよ! ' + praise());
+  toast('記録したよ! ' + praise(data.date));
 };
-function praise(){ return ['えらい!','その調子!','continue…じゃなくて継続は力なり!','ナイス記録!','👏'][Math.floor(Math.random()*5)]; }
+function praise(addedDate){
+  // 半分の確率で「今週◯日記録」をほめる(続けやすさの目安を見える化)
+  const w=weekRecordDays(addedDate);
+  if(w>=2 && Math.random()<0.5) return '今週は'+w+'日も記録できたね!';
+  return ['えらい!','その調子!','continue…じゃなくて継続は力なり!','ナイス記録!','👏'][Math.floor(Math.random()*5)];
+}
 
 /* ================= 音声入力 ================= */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -930,44 +964,72 @@ function monthRange(d){
   const e=y+'-'+String(m+1).padStart(2,'0')+'-31';
   return [s,e];
 }
-function renderCatList(totals, total){
-  const grid=$('#cat-list'); grid.innerHTML='';
-  const rows=Object.entries(totals).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  if(!rows.length){ const e=document.createElement('div'); e.className='empty'; e.style.gridColumn='1 / -1'; e.textContent='この月の支出はまだないよ'; grid.appendChild(e); $('#cat-total').textContent=''; return; }
-  rows.forEach(([cat,amount])=>{
-    const d=document.createElement('div'); d.className='bal';
-    const name=document.createElement('div'); name.className='name';
-    const dot=document.createElement('span'); dot.className='dot'; dot.style.background=CAT_COLORS[cat]||'#C6D9CC';
-    name.append(dot, document.createTextNode(cat));
-    const val=document.createElement('div'); val.className='val'; val.textContent=yen(amount);
-    d.append(name, val);
-    grid.appendChild(d);
+/* ---- 内訳リスト(共通部品) ----
+   「何で分けるか」を DIMENSIONS に1行足すだけで、新しい内訳を増やせる。
+   key: 取引から分け方の値を取り出す / label: 値の表示名 / color: 色(無ければアクセント色) / pie: 円グラフを出すか */
+const DIMENSIONS = {
+  category: { label:'カテゴリー', key:tx=>tx.category, name:k=>k, color:k=>CAT_COLORS[k]||'#C6D9CC', pie:true },
+  method:   { label:'支払い方法', key:tx=>tx.method, name:k=>(METHODS.find(m=>m.id===k)?.label||'その他'), color:()=>null, pie:false },
+};
+let bdMode = 'category';
+let bdTotals = { category:{}, method:{} }, bdExpense = 0;
+
+function renderBdSeg(){
+  const seg=$('#bd-seg'); seg.innerHTML='';
+  Object.entries(DIMENSIONS).forEach(([id,dim])=>{
+    const b=document.createElement('button');
+    b.textContent=dim.label;
+    if(id===bdMode) b.classList.add('on');
+    b.onclick=()=>{ bdMode=id; renderBdSeg(); renderBreakdown(); };
+    seg.appendChild(b);
   });
-  const t=$('#cat-total'); t.textContent='今月の支出ごうけい '; const b=document.createElement('b'); b.textContent=yen(total); t.appendChild(b);
 }
-function renderMethodList(totals, total){
-  const box=$('#method-list'); box.innerHTML='';
-  const rows=METHODS.map(m=>({label:m.label, amount:totals[m.id]||0})).filter(r=>r.amount>0).sort((a,b)=>b.amount-a.amount);
-  if(!rows.length){ const e=document.createElement('div'); e.className='empty'; e.textContent='この月の支出はまだないよ'; box.appendChild(e); return; }
+function renderBreakdown(){
+  const dim=DIMENSIONS[bdMode], totals=bdTotals[bdMode]||{}, total=bdExpense;
+  const box=$('#bd-list'); box.innerHTML='';
+  const rows=Object.entries(totals).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>({label:dim.name(k), amount:v, color:dim.color(k)}));
+  const pieWrap=$('#bd-pie');
+  if(pieChart){ pieChart.destroy(); pieChart=null; }
+  if(!rows.length){
+    pieWrap.style.display='none';
+    const e=document.createElement('div'); e.className='empty'; e.textContent='この月の支出はまだないよ'; box.appendChild(e);
+    $('#bd-total').textContent=''; return;
+  }
+  // 円グラフはカテゴリーのときだけ
+  pieWrap.style.display=dim.pie?'block':'none';
+  if(dim.pie){
+    pieChart=new Chart($('#chart-pie'),{
+      type:'doughnut',
+      data:{labels:rows.map(r=>r.label), datasets:[{data:rows.map(r=>r.amount), backgroundColor:rows.map(r=>r.color||'#C6D9CC')}]},
+      options:{plugins:{legend:{display:false}}}
+    });
+  }
   rows.forEach(r=>{
+    const pct=Math.round(r.amount/total*100);
     const row=document.createElement('div'); row.className='m-row';
     const head=document.createElement('div'); head.className='m-head';
-    const name=document.createElement('span'); name.textContent=r.label;
-    const amt=document.createElement('span'); amt.className='amt'; amt.textContent=yen(r.amount)+'('+Math.round(r.amount/total*100)+'%)';
+    const name=document.createElement('span');
+    if(r.color){ const dot=document.createElement('span'); dot.className='dot'; dot.style.background=r.color; name.appendChild(dot); }
+    name.appendChild(document.createTextNode(r.label));
+    const amt=document.createElement('span'); amt.className='amt'; amt.textContent=yen(r.amount)+'('+pct+'%)';
     head.append(name, amt);
     const bar=document.createElement('div'); bar.className='m-bar';
     const fill=document.createElement('span'); fill.style.width=(r.amount/total*100)+'%';
+    if(r.color) fill.style.background=r.color;
     bar.appendChild(fill);
     row.append(head, bar);
     box.appendChild(row);
   });
+  const t=$('#bd-total'); t.textContent='今月の支出ごうけい '; const b=document.createElement('b'); b.textContent=yen(total); t.appendChild(b);
 }
 async function renderSummary(){
   const targets=currentTargets();
   $('#m-label').textContent=curMonth.getFullYear()+'年'+(curMonth.getMonth()+1)+'月';
   const [ms,me_]=monthRange(curMonth);
 
-  let income=0,expense=0,catTotals={},methodTotals={},days=new Set();
+  let income=0,expense=0,days=new Set();
+  const totals={}; Object.keys(DIMENSIONS).forEach(id=>totals[id]={});
   let txs=[];
   targets.forEach(t=>txs.push(...txCache[t]));
   txs.forEach(tx=>{
@@ -975,13 +1037,15 @@ async function renderSummary(){
     if(tx.type==='income') income+=tx.amount;
     if(tx.type==='expense'){
       expense+=tx.amount;
-      catTotals[tx.category]=(catTotals[tx.category]||0)+tx.amount;
-      methodTotals[tx.method]=(methodTotals[tx.method]||0)+tx.amount;
+      Object.entries(DIMENSIONS).forEach(([id,dim])=>{
+        const k=dim.key(tx); totals[id][k]=(totals[id][k]||0)+tx.amount;
+      });
     }
     days.add(tx.date);
   });
-  renderCatList(catTotals, expense);
-  renderMethodList(methodTotals, expense);
+  bdTotals=totals; bdExpense=expense;
+  renderBdSeg();
+  renderBreakdown();
   $('#s-income').textContent=yen(income);
   $('#s-expense').textContent=yen(expense);
   $('#s-days').textContent=days.size+'日';
@@ -1005,18 +1069,6 @@ async function renderSummary(){
       grid.appendChild(d);
     });
   }
-
-  // 円グラフ(カテゴリー別に固定の色をつける)
-  const pieLabels=Object.keys(catTotals), pieData=Object.values(catTotals);
-  const pieColors=pieLabels.map(c=>CAT_COLORS[c]||'#C6D9CC');
-  if(pieChart) pieChart.destroy();
-  pieChart=new Chart($('#chart-pie'),{
-    type:'doughnut',
-    data:{labels:pieLabels.length?pieLabels:['データなし'],
-      datasets:[{data:pieData.length?pieData:[1],
-        backgroundColor:pieLabels.length?pieColors:['#C6D9CC']}]},
-    options:{plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}
-  });
 
   // 棒グラフ(6か月)
   const labels=[],inData=[],exData=[];
@@ -1109,6 +1161,42 @@ function renderStreak(){
   }
 }
 
+/* ================= 入力タブ上の帯(いま使えるお金) ================= */
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// 今週(月曜はじまり)に記録した日数。addedDate は今まさに記録した日付(まだ一覧に届いていない分)
+function weekRecordDays(addedDate){
+  if(!me||me==='parent'||!txCache[me]) return 0;
+  const now=new Date(), mon=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  mon.setDate(mon.getDate()-((mon.getDay()+6)%7));
+  const s=ymd(mon), e=todayStr();
+  const dates=new Set(txCache[me].map(t=>t.date));
+  if(addedDate) dates.add(addedDate);
+  return [...dates].filter(d=>d>=s&&d<=e).length;
+}
+async function renderNowStrip(){
+  const box=$('#now-strip');
+  if(!me||me==='parent'||!txCache[me]){ box.style.display='none'; return; }
+  const b=await calcBalances(me,null);
+  const bal=b.sbi+b.paypay+b.suica+b.merpay+b.cash+b.other;
+  const [ms,me_]=monthRange(new Date());
+  const spent=txCache[me].filter(t=>t.type==='expense'&&t.date>=ms&&t.date<=me_).reduce((a,t)=>a+t.amount,0);
+  $('#ns-bal').textContent=yen(bal);
+  $('#ns-spent').textContent=yen(spent);
+  $('#ns-week').textContent=weekRecordDays()+'日';
+  box.style.display='grid';
+}
+
+/* ================= バージョン ================= */
+$('#app-version').textContent=APP_VERSION;
+$('#btn-update').onclick=async()=>{
+  try{
+    const reg=await navigator.serviceWorker?.getRegistration();
+    if(reg) await reg.update();
+  }catch(e){}
+  toast('いちばん新しい版を読み込むね');
+  setTimeout(()=>location.reload(),900);
+};
+
 /* ================= 設定 ================= */
 $('#set-save-bal').onclick=async()=>{
   await db.collection('users').doc(me).set({
@@ -1160,6 +1248,7 @@ function checkReminder(time){
 /* ================= 一括更新 ================= */
 function refreshAll(){
   renderStreak();
+  renderNowStrip();
   renderHistory();
   renderSummary();
 }

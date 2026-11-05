@@ -1,4 +1,6 @@
-const CACHE = 'kakeibo-v20';
+// リリースのたびに上げる。index.html の APP_VERSION と必ず同じにする
+const VERSION = '1.1.0';
+const CACHE = 'kakeibo-' + VERSION;
 const ASSETS = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
