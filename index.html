@@ -443,7 +443,7 @@ canvas{max-width:100%}
 /* ================= バージョン =================
    リリースのたびに上げる。sw.js の VERSION と必ず同じにする(docs/更新履歴.md にも書く)
    形式: 大きな変更.機能追加.小さな修正 */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -1127,10 +1127,11 @@ async function renderSummary(){
   }
   $('#s-endbal').textContent=yen(endbal);
 
-  // 現在残高
+  // 現在残高(先に全部計算してから一度に入れ替える。描き直しが重なってもマス目が二重にならないように)
+  const bals=[];
+  for(const t of targets) bals.push(await calcBalances(t,null));
   const grid=$('#bal-grid'); grid.innerHTML='';
-  for(const t of targets){
-    const b=await calcBalances(t,null);
+  for(const b of bals){
     ACCOUNTS.forEach(a=>{
       const d=document.createElement('div'); d.className='bal';
       d.innerHTML=`<div class="name">${a.label}</div><div class="val">${yen(b[a.id])}</div>`;
