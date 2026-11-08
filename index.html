@@ -141,6 +141,16 @@ main{padding:0 16px 90px;max-width:520px;margin:0 auto}
 .bal{background:var(--bg);border-radius:12px;padding:10px 12px}
 .bal .name{font-size:13px;color:var(--ink-soft)}
 .bal .val{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.bal.saving{grid-column:1/-1;background:var(--card);border:1px dashed var(--line)}
+.bal .note{font-size:12px;color:var(--ink-soft)}
+.adj-open{margin-top:12px;background:var(--accent-soft);color:var(--accent)}
+.adj-panel{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.adj-help{font-size:14px;line-height:1.6;margin-bottom:12px}
+.adj-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.adj-row label{flex:0 0 7.5em;font-size:14px;font-weight:600}
+.adj-row input{flex:1;min-width:0;font-size:20px;font-weight:700;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-variant-numeric:tabular-nums}
+.adj-row .diff{flex:0 0 6.5em;text-align:right;font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.adj-row .diff.on{color:var(--accent);font-weight:700}
 
 /* ---- 履歴 ---- */
 .day-head{font-size:13px;color:var(--ink-soft);font-weight:600;margin:16px 4px 6px}
@@ -372,6 +382,13 @@ canvas{max-width:100%}
       <div class="card" id="bal-card">
         <h3>いまの残高</h3>
         <div class="bal-grid" id="bal-grid"></div>
+        <button class="btn adj-open" id="adj-open">🔧 ほんとうの残高にあわせる</button>
+        <div class="adj-panel" id="adj-panel" style="display:none">
+          <p class="adj-help">銀行アプリやお財布を見て、<b>ほんとうの金額</b>を入れてね。<br>ちがう分は「残高あわせ」として記録するよ(支出や収入には入らないよ)。</p>
+          <div id="adj-fields"></div>
+          <button class="btn" id="adj-save">この金額にあわせる</button>
+          <button class="btn ghost" id="adj-cancel">やめる</button>
+        </div>
       </div>
       <div class="card">
         <h3>データの出力</h3>
@@ -426,7 +443,7 @@ canvas{max-width:100%}
 /* ================= バージョン =================
    リリースのたびに上げる。sw.js の VERSION と必ず同じにする(docs/更新履歴.md にも書く)
    形式: 大きな変更.機能追加.小さな修正 */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -467,6 +484,11 @@ const ACCOUNTS = [
   {id:'cash',  label:'現金'},
   {id:'other', label:'その他'}
 ];
+// 振替先だけに出す「ちょきん」。ここへ移したお金は「使えるお金」には数えない
+const SAVING = {id:'saving', label:'ちょきん(べつの口座)'};
+function accLabel(id){ return (id===SAVING.id?SAVING:ACCOUNTS.find(a=>a.id===id))?.label||''; }
+// 記録日数・連続記録に数える記録(「残高あわせ」は数えない)
+const isRecord = tx => tx.type!=='adjust';
 // カテゴリーごとの色を固定(月によって表示される項目が変わっても同じ色になるように)
 const CAT_COLORS = {
   '食費':'#2a78d6', '家賃':'#eb6834', '光熱費':'#1baf7a', '通信費':'#eda100',
@@ -765,7 +787,7 @@ function renderMethods(){
 }
 function renderTransferTo(){
   const box=$('#in-transfer-to'); box.innerHTML=''; selTransferTo=null;
-  ACCOUNTS.filter(a=>a.id!=='sbi').forEach(a=>box.appendChild(chip(a.label+' へ',b=>{ selTransferTo=a.id; $$('#in-transfer-to button').forEach(x=>x.classList.toggle('on',x===b)); })));
+  [...ACCOUNTS.filter(a=>a.id!=='sbi'), SAVING].forEach(a=>box.appendChild(chip(a.label+' へ',b=>{ selTransferTo=a.id; $$('#in-transfer-to button').forEach(x=>x.classList.toggle('on',x===b)); })));
 }
 $$('#type-seg button').forEach(b=>b.onclick=()=>{
   inputType=b.dataset.type;
@@ -910,12 +932,14 @@ function applyVoice(text){
 async function calcBalances(uid, untilDate){
   const doc = await db.collection('users').doc(uid).get();
   const s=doc.data()||{};
-  const bal={sbi:+s.initSbi||0, paypay:+s.initPaypay||0, suica:+s.initSuica||0, merpay:+s.initMerpay||0, cash:+s.initCash||0, other:+s.initOther||0};
+  // saving(ちょきん)は使えるお金の合計には入れない。合計は6つの口座だけで出す
+  const bal={sbi:+s.initSbi||0, paypay:+s.initPaypay||0, suica:+s.initSuica||0, merpay:+s.initMerpay||0, cash:+s.initCash||0, other:+s.initOther||0, saving:0};
   (txCache[uid]||[]).forEach(tx=>{
     if(untilDate && tx.date>untilDate) return;
     if(tx.type==='expense') bal[tx.method]-=tx.amount;
     else if(tx.type==='income') bal[tx.method]+=tx.amount;
     else if(tx.type==='transfer'){ bal[tx.from]-=tx.amount; bal[tx.to]+=tx.amount; }
+    else if(tx.type==='adjust') bal[tx.method]+=tx.amount; // 差の分(マイナスもある)
   });
   return bal;
 }
@@ -972,16 +996,18 @@ function renderHistory(){
     }
     const el=document.createElement('div'); el.className='tx';
     const methodLabel = tx.type==='transfer'
-      ? 'SBI → '+(ACCOUNTS.find(a=>a.id===tx.to)?.label||'')
-      : (ACCOUNTS.find(a=>a.id===tx.method)?.label||'');
-    const cat = tx.type==='transfer'?'振替':tx.category;
+      ? 'SBI → '+accLabel(tx.to)
+      : accLabel(tx.method);
+    const cat = tx.type==='transfer'?'振替':tx.type==='adjust'?'残高あわせ':tx.category;
     // メモは自由入力なので textContent で入れる(HTMLとして解釈させない)
     const left=document.createElement('div');
     const c=document.createElement('div'); c.className='cat'; c.textContent=cat;
     const sub=document.createElement('div'); sub.className='sub'; sub.textContent=methodLabel+(tx.memo?' ・ '+tx.memo:'');
     left.append(c, sub);
     const amt=document.createElement('div'); amt.className='amt'+(tx.type==='income'?' in':'');
-    amt.textContent=(tx.type==='income'?'+':tx.type==='expense'?'-':'')+yen(tx.amount);
+    amt.textContent = tx.type==='adjust'
+      ? (tx.amount>=0?'+':'-')+yen(Math.abs(tx.amount))
+      : (tx.type==='income'?'+':tx.type==='expense'?'-':'')+yen(tx.amount);
     el.append(left, amt);
     if(me!=='parent'){
       const del=document.createElement('button'); del.className='del'; del.textContent='×';
@@ -1083,7 +1109,7 @@ async function renderSummary(){
         const k=dim.key(tx); totals[id][k]=(totals[id][k]||0)+tx.amount;
       });
     }
-    days.add(tx.date);
+    if(isRecord(tx)) days.add(tx.date);
   });
   bdTotals=totals; bdExpense=expense;
   renderBdSeg();
@@ -1110,7 +1136,15 @@ async function renderSummary(){
       d.innerHTML=`<div class="name">${a.label}</div><div class="val">${yen(b[a.id])}</div>`;
       grid.appendChild(d);
     });
+    if(b.saving){
+      const d=document.createElement('div'); d.className='bal saving';
+      d.innerHTML=`<div class="name">${SAVING.label}に移したお金</div><div class="val">${yen(b.saving)}</div><div class="note">使えるお金には入らないよ</div>`;
+      grid.appendChild(d);
+    }
   }
+  // 保護者には出さない(書き込めないため)。入力中のパネルは開いたままにする
+  if(me==='parent'){ $('#adj-open').style.display='none'; $('#adj-panel').style.display='none'; }
+  else if($('#adj-panel').style.display==='none') $('#adj-open').style.display='block';
 
   // 棒グラフ(6か月)
   const labels=[],inData=[],exData=[];
@@ -1138,16 +1172,63 @@ $('#h-next').onclick=()=>{ histMonth=new Date(histMonth.getFullYear(),histMonth.
 $('#m-prev').onclick=()=>{ curMonth=new Date(curMonth.getFullYear(),curMonth.getMonth()-1,1); renderSummary(); };
 $('#m-next').onclick=()=>{ curMonth=new Date(curMonth.getFullYear(),curMonth.getMonth()+1,1); renderSummary(); };
 
+/* ================= 残高あわせ ================= */
+// ほんとうの金額を入れると、アプリの残高との差を type:'adjust' で1件ずつ記録する
+let adjBal=null;
+$('#adj-open').onclick=async()=>{
+  if(me==='parent') return;
+  adjBal=await calcBalances(me,null);
+  const box=$('#adj-fields'); box.innerHTML='';
+  ACCOUNTS.forEach(a=>{
+    const row=document.createElement('div'); row.className='adj-row';
+    const lb=document.createElement('label'); lb.textContent=a.label; lb.htmlFor='adj-'+a.id;
+    const inp=document.createElement('input'); inp.id='adj-'+a.id; inp.inputMode='numeric'; inp.value=adjBal[a.id];
+    const df=document.createElement('div'); df.className='diff'; df.textContent='ずれなし';
+    inp.oninput=()=>{
+      const v=parseInt(zenToHan(inp.value).replace(/[^\d-]/g,''),10);
+      const d=isNaN(v)?0:v-adjBal[a.id];
+      df.textContent = d===0?'ずれなし':(d>0?'+':'-')+yen(Math.abs(d));
+      df.classList.toggle('on',d!==0);
+    };
+    row.append(lb,inp,df); box.appendChild(row);
+  });
+  $('#adj-panel').style.display='block'; $('#adj-open').style.display='none';
+};
+function closeAdj(){ $('#adj-panel').style.display='none'; $('#adj-open').style.display='block'; adjBal=null; }
+$('#adj-cancel').onclick=closeAdj;
+$('#adj-save').onclick=async()=>{
+  if(me==='parent'||!adjBal) return;
+  const list=[];
+  for(const a of ACCOUNTS){
+    const raw=$('#adj-'+a.id).value;
+    const v=parseInt(zenToHan(raw).replace(/[^\d-]/g,''),10);
+    if(isNaN(v)) continue;
+    const d=v-adjBal[a.id];
+    if(d!==0) list.push({type:'adjust',amount:d,method:a.id,date:todayStr(),memo:'ほんとうの残高にあわせた',
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+  }
+  if(!list.length){ toast('ずれはなかったよ。ばっちり!'); closeAdj(); return; }
+  $('#adj-save').disabled=true;
+  try{
+    const batch=db.batch(), col=db.collection('users').doc(me).collection('tx');
+    list.forEach(d=>batch.set(col.doc(),d));
+    await batch.commit();
+    toast(list.length+'つの残高をあわせたよ!');
+    closeAdj();
+  }catch(e){ toast('うまく保存できなかった…もう一度ためしてね'); }
+  finally{ $('#adj-save').disabled=false; }
+};
+
 /* ================= Excel出力 ================= */
 function txToRow(tx, owner){
   const methodLabel = tx.type==='transfer'
-    ? 'SBI → '+(ACCOUNTS.find(a=>a.id===tx.to)?.label||'')
-    : (ACCOUNTS.find(a=>a.id===tx.method)?.label||'');
-  const typeLabel = tx.type==='income'?'収入':tx.type==='expense'?'支出':'振替';
+    ? 'SBI → '+accLabel(tx.to)
+    : accLabel(tx.method);
+  const typeLabel = tx.type==='income'?'収入':tx.type==='expense'?'支出':tx.type==='adjust'?'残高あわせ':'振替';
   const row = {
     '日付': tx.date,
     '種類': typeLabel,
-    'カテゴリー': tx.type==='transfer'?'':(tx.category||''),
+    'カテゴリー': (tx.type==='transfer'||tx.type==='adjust')?'':(tx.category||''),
     '支払い方法': methodLabel,
     '金額': tx.amount,
     'メモ': tx.memo||''
@@ -1188,7 +1269,7 @@ $('#export-all').onclick=()=>{
 /* ================= ストリーク ================= */
 function renderStreak(){
   if(me==='parent') return;
-  const dates=new Set(txCache[me].map(t=>t.date));
+  const dates=new Set(txCache[me].filter(isRecord).map(t=>t.date));
   let streak=0; const d=new Date();
   if(!dates.has(todayStr())) d.setDate(d.getDate()-1); // 今日まだでも昨日から数える
   while(true){
@@ -1213,7 +1294,7 @@ function weekRecordDays(addedDate){
   const now=new Date(), mon=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   mon.setDate(mon.getDate()-((mon.getDay()+6)%7));
   const s=ymd(mon), e=todayStr();
-  const dates=new Set(txCache[me].map(t=>t.date));
+  const dates=new Set(txCache[me].filter(isRecord).map(t=>t.date));
   if(addedDate) dates.add(addedDate);
   return [...dates].filter(d=>d>=s&&d<=e).length;
 }

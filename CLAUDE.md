@@ -139,12 +139,12 @@ const firebaseConfig = {
 
 ```js
 tx = {
-  type,       // 'expense' | 'income' | 'transfer'
+  type,       // 'expense' | 'income' | 'transfer' | 'adjust'（残高あわせ。amount はマイナスもある、method に口座ID）
   amount,     // 数値（円）
   category,   // カテゴリー名。type:'transfer' のときは無し
   method,     // 支払い方法／受け取り先のID。type:'transfer' のときは無し
   from,       // 振替元。'sbi' 固定（type:'transfer' のときのみ）
-  to,         // 振替先のID（type:'transfer' のときのみ）
+  to,         // 振替先のID（type:'transfer' のときのみ）。'saving'＝ちょきん(べつの口座)も可
   date,       // "YYYY-MM-DD"
   memo,       // メモ（任意）
   createdAt   // serverTimestamp()
@@ -159,6 +159,8 @@ const CATS_INCOME  = ['仕送り','アルバイト','その他収入'];
 // id と表示名。支出画面では「SBIデビット」、収入・振替画面では「SBIネット銀行」と呼び分ける
 const METHODS  = [sbi:'SBIデビット', paypay, suica, merpay, cash, other];
 const ACCOUNTS = [sbi:'SBIネット銀行', paypay, suica, merpay, cash, other];
+// 振替先だけに出す。ここへ移したお金は「使えるお金」（帯・月末残高）の合計に入れない
+const SAVING = {id:'saving', label:'ちょきん(べつの口座)'};
 ```
 
 残高は保存せず、**設定画面の初期残高（`initXxx`）に全取引を足し引きして毎回計算する**。
@@ -184,7 +186,9 @@ const ACCOUNTS = [sbi:'SBIネット銀行', paypay, suica, merpay, cash, other];
       （0円は出さない。収入・振替は含めない）。**円グラフはカテゴリーのときだけ**出す。最下部に今月の支出ごうけい
       - 共通部品: `DIMENSIONS`（分け方の表）＋ `renderBreakdown()`。新しい分け方は `DIMENSIONS` に1行足すだけ
    3. 「前の月とくらべて?」— 6か月の棒グラフ
-   4. 「いまの残高」— 口座別のマス目
+   4. 「いまの残高」— 口座別のマス目（ちょきんへ移したお金は別枠）。
+      「ほんとうの残高にあわせる」ボタンで、本当の金額との差を `type:'adjust'` で記録する（1.3.0〜）。
+      残高あわせは支出・収入・記録日数・連続記録に数えない（`isRecord`）。保護者には出さない
    - 機能を足すときは「どの問いに答えるか」を先に決める。どの問いにも答えない機能は足さない
    - 円グラフ・カテゴリーの色はカテゴリーごとに `CAT_COLORS` で固定（月によって表示される項目が変わっても同じ色になる）。
      色はdataviz skillの標準パレット（色覚多様性への配慮を含めて検証済み）を使用。9番目の「予備費」だけは
@@ -208,8 +212,8 @@ const ACCOUNTS = [sbi:'SBIネット銀行', paypay, suica, merpay, cash, other];
 - **文言は小学生〜中高生にも分かる、やさしい日本語**（「〜だよ」「〜してね」調）。
   記録するたびにランダムで褒め言葉を出す（`praise()`）
 - **保護者は絶対に書き込めない**。UIで隠すだけでなく、Firestoreルールでも禁止する（二重で守る）
-- **リリースのたびに版（バージョン）を必ず上げる**（現在 `1.2.0`）。変える場所は3つ:
-  `index.html` の `APP_VERSION`、`sw.js` の `VERSION`（キャッシュ名 `kakeibo-1.2.0` になる）、`docs/更新履歴.md`。
+- **リリースのたびに版（バージョン）を必ず上げる**（現在 `1.3.0`）。変える場所は3つ:
+  `index.html` の `APP_VERSION`、`sw.js` の `VERSION`（キャッシュ名 `kakeibo-1.3.0` になる）、`docs/更新履歴.md`。
   `node scripts/check-version.js` で食い違いを確認できる。公開後は Git に `v1.1.0` のようなタグを付ける。
   上げ忘れると古いファイルが表示され続ける。いまの版は設定タブ「アプリについて」に表示される
 - **版を公開したら `docs/変更の記録/` にキャプチャを足す**（入力・履歴・集計(上)・集計(下)の4枚）。
